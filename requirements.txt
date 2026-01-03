@@ -1,0 +1,19 @@
+# Core dependencies
+networkx>=3.0
+pydot>=1.4.2
+pyparsing>=3.0.0
+
+# Progress bars and CLI
+tqdm>=4.65.0
+
+# Configuration
+PyYAML>=6.0
+
+# Optional: Visualization (uncomment if needed)
+# matplotlib>=3.7.0
+# seaborn>=0.12.0
+# plotly>=5.14.0
+
+# Optional: Excel export (uncomment if needed)
+# openpyxl>=3.1.0
+# pandas>=2.0.0

@@ -1,0 +1,45 @@
+# Dependency Analysis Pipeline Configuration
+
+# Path to the depends executable
+depends_path: "depends-0.9.7-package-20221104a/depends.exe"
+
+# Input repositories folder
+repos_folder: "repos"
+
+# Output folder for .dot files
+dot_output_folder: "depends-out"
+
+# Output folder for analysis results
+results_output_folder: "results"
+
+# Programming language
+# Options: cpp, python, java, kotlin, go, ruby, pom
+language: "java"
+
+# Logging configuration
+log_folder: "logs"
+
+# Analysis options
+analysis:
+  # Compute small-world metrics (can be computationally expensive)
+  compute_small_world: true
+  
+  # Include indirect dependencies in analysis
+  analyze_indirect: true
+  
+  # Timeout for dependency extraction per project (seconds)
+  extraction_timeout: 300
+
+# Export options
+export:
+  # Generate CSV output
+  csv: true
+  
+  # Generate JSON output
+  json: true
+  
+  # Generate summary report
+  summary: true
+  
+  # Generate visualizations (requires additional dependencies)
+  visualizations: false

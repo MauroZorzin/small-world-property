@@ -1,0 +1,47 @@
+# --- OUTPUT DIRECTORIES & FILES ---
+depends-out/
+logs/
+results/
+out.csv
+
+# --- INDIVIDUAL OUTPUT FILES (if output folders appear in root) ---
+*.dot
+*.log
+*.csv
+*.json
+*.txt
+
+# --- REPOSITORY CLONES (raw source code for analysis, not part of version control) ---
+repos/
+
+# --- ARCHIVE PACKAGES / BINARIES ---
+depends-0.9.7-package-20221104a.zip
+depends-0.9.7-package-20221104a/
+
+# --- CONFIGURATION, SCRIPTS, & SYMLINKS (tracked unless specifically meant to be ignored) ---
+!README.md
+!requirements.txt
+!config.yml
+!run_pipeline.bat
+!analyze_dependencies.py
+!extract_dependencies.py
+!pipeline.py
+!small-wold-direct.py
+!small-wold-undirect.py
+
+# --- GITKEEP (used for keeping empty dirs, but ignore actual content) ---
+!depends-out/.gitkeep
+!repos/.gitkeep
+!results/.gitkeep
+
+# --- SYSTEM / EDITOR / OS JUNK ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+
+# --- END OF GITIGNORE ---
