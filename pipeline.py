@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Directed Graph Analysis CLI Tool with Fagiolo Clustering
-Usage: python graph_analyzer.py input.dot output.csv [--random-iterations N]
+Usage: python graph_analyzer.py input.dot output.csv [--per-node output_nodes.csv] [--random-iterations N]
 """
 
 import networkx as nx
@@ -10,7 +10,7 @@ import pandas as pd
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -29,12 +29,15 @@ class FagioloClusteringAnalyzer:
         self.n = self.G.number_of_nodes()
         self.m = self.G.number_of_edges()
         
+        # Store original node names (preserve file names)
+        self.original_nodes = list(self.G.nodes())
+        
         # Create node to index mapping for faster matrix operations
-        self.node_to_idx = {node: idx for idx, node in enumerate(self.G.nodes())}
+        self.node_to_idx = {node: idx for idx, node in enumerate(self.original_nodes)}
         self.idx_to_node = {idx: node for node, idx in self.node_to_idx.items()}
         
         # Pre-compute adjacency matrix for performance
-        self.A = nx.to_scipy_sparse_array(self.G, nodelist=list(self.G.nodes()), 
+        self.A = nx.to_scipy_sparse_array(self.G, nodelist=self.original_nodes, 
                                           format='csr', dtype=np.float32)
         
         print(f"  Loaded: {self.n} nodes, {self.m} edges", file=sys.stderr)
@@ -149,16 +152,59 @@ class FagioloClusteringAnalyzer:
             'cycle': c_cycle.tolist(),
             'middleman': c_middleman.tolist(),
             'in': c_in.tolist(),
-            'out': c_out.tolist()
+            'out': c_out.tolist(),
+            # Also store degree information
+            'in_degree': d_in.tolist(),
+            'out_degree': d_out.tolist(),
+            'total_degree': d_tot.tolist(),
+            'bilateral_degree': d_bilateral.tolist()
         }
         
         # Compute averages (ignoring inf and nan)
         averages = {}
-        for key, values in results.items():
-            valid_values = [v for v in values if np.isfinite(v)]
+        for key in ['overall', 'cycle', 'middleman', 'in', 'out']:
+            valid_values = [v for v in results[key] if np.isfinite(v)]
             averages[key] = np.mean(valid_values) if valid_values else 0.0
         
         return results, averages
+    
+    def export_per_node_metrics(self, clustering_results: Dict, output_path: str):
+        """
+        Export per-node clustering metrics to CSV, preserving original node names.
+        
+        Args:
+            clustering_results: Dictionary with clustering coefficients per node
+            output_path: Path to save the per-node CSV file
+        """
+        print(f"Exporting per-node metrics to {output_path}...", file=sys.stderr)
+        
+        # Create DataFrame with original node names
+        data = []
+        for idx, node in enumerate(self.original_nodes):
+            node_data = {
+                'node': str(node),  # Preserve original file name
+                'in_degree': int(clustering_results['in_degree'][idx]),
+                'out_degree': int(clustering_results['out_degree'][idx]),
+                'total_degree': int(clustering_results['total_degree'][idx]),
+                'bilateral_degree': int(clustering_results['bilateral_degree'][idx]),
+                'clustering_overall': clustering_results['overall'][idx],
+                'clustering_cycle': clustering_results['cycle'][idx],
+                'clustering_middleman': clustering_results['middleman'][idx],
+                'clustering_in': clustering_results['in'][idx],
+                'clustering_out': clustering_results['out'][idx]
+            }
+            data.append(node_data)
+        
+        df = pd.DataFrame(data)
+        
+        # Sort by total_degree descending (most connected nodes first)
+        df = df.sort_values('total_degree', ascending=False)
+        
+        # Save to CSV
+        df.to_csv(output_path, index=False)
+        print(f"  ✓ Saved {len(df)} node records", file=sys.stderr)
+        
+        return df
     
     def generate_random_directed_graph(self) -> nx.DiGraph:
         """Generate random directed graph with same degree sequence"""
@@ -200,9 +246,10 @@ class FagioloClusteringAnalyzer:
             analyzer_random.G = G_random
             analyzer_random.n = G_random.number_of_nodes()
             analyzer_random.m = G_random.number_of_edges()
-            analyzer_random.node_to_idx = {node: idx for idx, node in enumerate(G_random.nodes())}
+            analyzer_random.original_nodes = list(G_random.nodes())
+            analyzer_random.node_to_idx = {node: idx for idx, node in enumerate(analyzer_random.original_nodes)}
             analyzer_random.A = nx.to_scipy_sparse_array(G_random, 
-                                                         nodelist=list(G_random.nodes()), 
+                                                         nodelist=analyzer_random.original_nodes, 
                                                          format='csr', dtype=np.float32)
             
             _, C_random_avg = analyzer_random.fagiolo_clustering_fast()
@@ -231,8 +278,16 @@ class FagioloClusteringAnalyzer:
             'is_small_world': sigma > 1 if np.isfinite(sigma) else False
         }
     
-    def analyze_and_export(self, output_path: str, num_random: int = 10):
-        """Run complete analysis and export results to CSV"""
+    def analyze_and_export(self, output_path: str, per_node_path: Optional[str] = None, 
+                          num_random: int = 10):
+        """
+        Run complete analysis and export results to CSV.
+        
+        Args:
+            output_path: Path for summary CSV file
+            per_node_path: Optional path for per-node metrics CSV
+            num_random: Number of random graphs for small-world comparison
+        """
         print("\n" + "="*70, file=sys.stderr)
         print("DIRECTED GRAPH ANALYSIS", file=sys.stderr)
         print("="*70 + "\n", file=sys.stderr)
@@ -260,15 +315,21 @@ class FagioloClusteringAnalyzer:
         clustering_results, clustering_avg = self.fagiolo_clustering_fast()
         results.update({f'clustering_{k}': v for k, v in clustering_avg.items()})
         
+        # Export per-node metrics if requested
+        if per_node_path:
+            self.export_per_node_metrics(clustering_results, per_node_path)
+        
         # Small-worldness
         sw_metrics = self.compute_small_worldness(num_random)
         results.update({f'smallworld_{k}': v for k, v in sw_metrics.items()})
         
-        # Create DataFrame and save
+        # Create DataFrame and save summary
         df = pd.DataFrame([results])
         df.to_csv(output_path, index=False)
         
-        print(f"\n✓ Results saved to: {output_path}", file=sys.stderr)
+        print(f"\n✓ Summary results saved to: {output_path}", file=sys.stderr)
+        if per_node_path:
+            print(f"✓ Per-node metrics saved to: {per_node_path}", file=sys.stderr)
         
         # Print summary
         print("\n" + "="*70, file=sys.stderr)
@@ -277,6 +338,10 @@ class FagioloClusteringAnalyzer:
         print(f"Nodes: {self.n}, Edges: {self.m}", file=sys.stderr)
         print(f"Avg Path Length: {avg_path:.4f}", file=sys.stderr)
         print(f"Clustering (C^D): {clustering_avg['overall']:.4f}", file=sys.stderr)
+        print(f"  - Cycle (C^cyc): {clustering_avg['cycle']:.4f}", file=sys.stderr)
+        print(f"  - Middleman (C^mid): {clustering_avg['middleman']:.4f}", file=sys.stderr)
+        print(f"  - In (C^in): {clustering_avg['in']:.4f}", file=sys.stderr)
+        print(f"  - Out (C^out): {clustering_avg['out']:.4f}", file=sys.stderr)
         print(f"Small-worldness σ: {sw_metrics['sigma']:.4f}", file=sys.stderr)
         if sw_metrics['is_small_world']:
             print("✓ Small-world properties detected", file=sys.stderr)
@@ -292,21 +357,24 @@ def main():
         epilog="""
 Examples:
   %(prog)s dependency_graph.dot results.csv
-  %(prog)s graph.dot output.csv --random-iterations 20
-  %(prog)s input.dot output.csv -r 5
+  %(prog)s graph.dot summary.csv --per-node nodes.csv
+  %(prog)s input.dot output.csv --per-node per_node.csv --random-iterations 20
+  %(prog)s graph.dot output.csv -p nodes.csv -r 5
 
-Output CSV contains:
-  - Basic graph metrics (nodes, edges, density, degrees)
-  - Average path length
-  - Fagiolo clustering coefficients (overall, cycle, middleman, in, out)
-  - Small-worldness metrics (σ, comparison with random graphs)
+Output Files:
+  1. Summary CSV: Single row with aggregate metrics
+  2. Per-Node CSV (optional): One row per node with clustering metrics
+
+The per-node CSV preserves original node names (file names from .dot file).
         """
     )
     
     parser.add_argument('input', type=str, 
                        help='Input graph file in DOT format')
     parser.add_argument('output', type=str, 
-                       help='Output CSV file path')
+                       help='Output CSV file path (summary metrics)')
+    parser.add_argument('-p', '--per-node', type=str, default=None,
+                       help='Output CSV file for per-node metrics (optional)')
     parser.add_argument('-r', '--random-iterations', type=int, default=10,
                        help='Number of random graphs for small-world comparison (default: 10)')
     
@@ -321,7 +389,7 @@ Output CSV contains:
     if not input_path.suffix.lower() in ['.dot', '.gv']:
         print(f"Warning: Input file should be in DOT format (.dot or .gv)", file=sys.stderr)
     
-    # Validate output path
+    # Validate output paths
     output_path = Path(args.output)
     if output_path.suffix.lower() != '.csv':
         print(f"Warning: Output file should have .csv extension", file=sys.stderr)
@@ -329,10 +397,18 @@ Output CSV contains:
     # Create output directory if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
+    per_node_path = None
+    if args.per_node:
+        per_node_path = Path(args.per_node)
+        if per_node_path.suffix.lower() != '.csv':
+            print(f"Warning: Per-node output file should have .csv extension", file=sys.stderr)
+        per_node_path.parent.mkdir(parents=True, exist_ok=True)
+        per_node_path = str(per_node_path)
+    
     try:
         # Run analysis
         analyzer = FagioloClusteringAnalyzer(str(input_path))
-        analyzer.analyze_and_export(str(output_path), args.random_iterations)
+        analyzer.analyze_and_export(str(output_path), per_node_path, args.random_iterations)
         
     except Exception as e:
         print(f"\nError during analysis: {e}", file=sys.stderr)
