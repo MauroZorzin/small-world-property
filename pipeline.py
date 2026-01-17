@@ -3,7 +3,7 @@
 Directed Graph Analysis CLI Tool with Fagiolo Clustering
 Usage: python graph_analyzer.py input.dot output.csv [--per-node output_nodes.csv] [--random-iterations N]
 """
-
+import re
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -167,22 +167,48 @@ class FagioloClusteringAnalyzer:
             averages[key] = np.mean(valid_values) if valid_values else 0.0
         
         return results, averages
-    
-    def export_per_node_metrics(self, clustering_results: Dict, output_path: str):
+
+    def _parse_node_names_from_comments(self, dot_path: str):
         """
-        Export per-node clustering metrics to CSV, preserving original node names.
-        
-        Args:
-            clustering_results: Dictionary with clustering coefficients per node
-            output_path: Path to save the per-node CSV file
+        Custom parser to extract node names from // ID:Name style comments.
         """
-        print(f"Exporting per-node metrics to {output_path}...", file=sys.stderr)
+        id_to_name = {}
+        # Regex to match // 4398:D:\Path\To\File.java
+        comment_pattern = re.compile(r"^\s*//\s*(\d+):(.+)$")
         
-        # Create DataFrame with original node names
+        try:
+            with open(dot_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    match = comment_pattern.match(line)
+                    if match:
+                        node_id = match.group(1)
+                        # Clean up path to get just the filename or keep full path
+                        full_path = match.group(2).strip()
+                        # Optional: simplify name to just the class name
+                        # simplified_name = full_path.split('\\')[-1] 
+                        id_to_name[node_id] = full_path
+        except Exception as e:
+            print(f"Warning: Could not parse comments for node names: {e}", file=sys.stderr)
+            
+        return id_to_name
+
+    def export_per_node_metrics(self, clustering_results: Dict, output_path: str, dot_path: str):
+        """
+        Modified export to include names parsed from DOT comments.
+        """
+        # 1. Parse names from comments
+        id_to_name_map = self._parse_node_names_from_comments(dot_path)
+        
         data = []
         for idx, node in enumerate(self.original_nodes):
+            node_id_str = str(node)
+            
+            # 2. Lookup name from our map, fallback to ID if not found
+            node_name = id_to_name_map.get(node_id_str, "Unknown")
+            
             node_data = {
-                'node': str(node),  # Preserve original file name
+                'node_id': node_id_str,
+                'node_name': node_name,
                 'in_degree': int(clustering_results['in_degree'][idx]),
                 'out_degree': int(clustering_results['out_degree'][idx]),
                 'total_degree': int(clustering_results['total_degree'][idx]),
@@ -278,7 +304,7 @@ class FagioloClusteringAnalyzer:
             'is_small_world': sigma > 1 if np.isfinite(sigma) else False
         }
     
-    def analyze_and_export(self, output_path: str, per_node_path: Optional[str] = None, 
+    def analyze_and_export(self, output_path: str, dot_path: str, per_node_path: Optional[str] = None, 
                           num_random: int = 10):
         """
         Run complete analysis and export results to CSV.
@@ -317,7 +343,7 @@ class FagioloClusteringAnalyzer:
         
         # Export per-node metrics if requested
         if per_node_path:
-            self.export_per_node_metrics(clustering_results, per_node_path)
+            self.export_per_node_metrics(clustering_results, per_node_path, dot_path )
         
         # Small-worldness
         sw_metrics = self.compute_small_worldness(num_random)
@@ -408,7 +434,7 @@ The per-node CSV preserves original node names (file names from .dot file).
     try:
         # Run analysis
         analyzer = FagioloClusteringAnalyzer(str(input_path))
-        analyzer.analyze_and_export(str(output_path), per_node_path, args.random_iterations)
+        analyzer.analyze_and_export(str(output_path),str(input_path), per_node_path, args.random_iterations)
         
     except Exception as e:
         print(f"\nError during analysis: {e}", file=sys.stderr)
