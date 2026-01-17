@@ -36,53 +36,75 @@ pip install -r requirements.txt
 ### Basic Usage
 
 ```bash
-python graph_analyzer.py input.dot output.csv
+python pipeline.py input.dot output.csv
 ```
+## Extract .dot
+Using depends (depends-0.9.7-package-20221104a)
+
+```bash
+.\depends.bat lang .\repos\repo_name .\depends-out\repo_name -f=dot -g=file -p=windows -s --type-filter=Import,Extend,Implement,Call,Create
+```
+
 
 ### Advanced Options
 
 ```bash
 # Specify number of random graphs for small-world comparison
-python graph_analyzer.py graph.dot results.csv --random-iterations 20
+python pipeline.py graph.dot results.csv --random-iterations 20 --per-node results-per-node.csv
 
 # Quick analysis (fewer random graphs, faster)
-python graph_analyzer.py graph.dot output.csv -r 5
+python pipeline.py graph.dot output.csv -r 5
 
 # Get help
-python graph_analyzer.py --help
+python pipeline.py --help
 ```
 
 ### Example
 
 ```bash
 # Analyze a code dependency graph
-python graph_analyzer.py dependency_graph.dot analysis_results.csv
+python pipeline.py dependency_graph.dot analysis_results.csv
 
 # Output:
-# ======================================================================
-# DIRECTED GRAPH ANALYSIS
-# ======================================================================
-# 
-# Loading graph from dependency_graph.dot...
-#   Loaded: 342 nodes, 1523 edges
-# Computing basic metrics...
-# Computing average path length...
-# Computing degree statistics...
-# Computing Fagiolo clustering coefficients...
-# Computing small-worldness (comparing to 10 random graphs)...
-#   Random graph 10/10...
-# 
-# ✓ Results saved to: analysis_results.csv
-# 
-# ======================================================================
-# SUMMARY
-# ======================================================================
-# Nodes: 342, Edges: 1523
-# Avg Path Length: 4.2341
-# Clustering (C^D): 0.0847
-# Small-worldness σ: 2.3456
-# ✓ Small-world properties detected
-# ======================================================================
+======================================================================
+DIRECTED GRAPH ANALYSIS
+======================================================================
+
+Computing basic metrics...
+Computing average path length...
+Computing degree statistics...
+Computing Fagiolo clustering coefficients...
+  ✓ Saved 997 node records
+Computing small-worldness (comparing to 10 random graphs)...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+Computing Fagiolo clustering coefficients...
+
+
+✓ Summary results saved to: archivia-summary3.csv
+✓ Per-node metrics saved to: archivia-nodes3.csv
+
+======================================================================
+SUMMARY
+======================================================================
+Nodes: 997, Edges: 5900
+Avg Path Length: 3.0636
+Clustering (C^D): 0.1730
+  - Cycle (C^cyc): 0.0032
+  - Middleman (C^mid): 0.2560
+  - In (C^in): 0.0789
+  - Out (C^out): 0.1018
+Small-worldness σ: 17.0267
+✓ Small-world properties detected
+======================================================================
 ```
 
 ## Input Format
