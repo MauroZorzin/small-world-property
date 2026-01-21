@@ -3,13 +3,22 @@ depends-out/
 logs/
 results/
 out.csv
-
+small-world-property/*
+results/*
+depends-out-json/*
+dv8-reports/*
 # --- INDIVIDUAL OUTPUT FILES (if output folders appear in root) ---
 *.dot
 *.log
 *.csv
 *.json
 *.txt
+*.html
+*.xlsx
+*.dv8-clsx
+*.dv8-dsm
+*.dv8*
+*.png
 
 # --- REPOSITORY CLONES (raw source code for analysis, not part of version control) ---
 repos/
