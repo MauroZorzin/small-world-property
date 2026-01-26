@@ -1,6 +1,6 @@
 # Define the paths to the tool and the output directory
 $toolPath = ".\depends-0.9.7-package-20221104a\depends-0.9.7\depends.bat"
-$repoRoot = ".\repos\a"
+$repoRoot = ".\repos"
 $outputRoot = ".\depends-out-json"
 
 # Create the output root directory if it doesn't exist

@@ -284,8 +284,15 @@ class FagioloClusteringAnalyzer:
         
         print("", file=sys.stderr)  # New line after progress
         
-        C_random = np.mean(C_random_list)
-        L_random = np.mean(L_random_list)
+        # Filter out infinite values for meaningful statistics
+        C_random_finite = [c for c in C_random_list if np.isfinite(c)]
+        L_random_finite = [l for l in L_random_list if np.isfinite(l)]
+        
+        # Compute means and stds only from finite values
+        C_random = np.mean(C_random_finite) if C_random_finite else 0.0
+        L_random = np.mean(L_random_finite) if L_random_finite else float('inf')
+        C_random_std = np.std(C_random_finite) if len(C_random_finite) > 1 else 0.0
+        L_random_std = np.std(L_random_finite) if len(L_random_finite) > 1 else 0.0
         
         # Compute small-worldness
         if C_random > 0 and L_random > 0 and np.isfinite(L_random) and np.isfinite(L_orig):
@@ -299,8 +306,8 @@ class FagioloClusteringAnalyzer:
             'L_orig': L_orig,
             'C_random_mean': C_random,
             'L_random_mean': L_random,
-            'C_random_std': np.std(C_random_list),
-            'L_random_std': np.std(L_random_list),
+            'C_random_std': C_random_std,
+            'L_random_std': L_random_std,
             'is_small_world': sigma > 1 if np.isfinite(sigma) else False
         }
     
