@@ -3,7 +3,7 @@ setlocal
 
 :: Settings
 set SCRIPT=pipeline.py
-set ITERATIONS=20
+set ITERATIONS=10
 set DOT_DIR=D:\GITHUB\small-world-property\depends-out-dot
 set OUT_DIR=D:\GITHUB\small-world-property\results
 
@@ -45,10 +45,10 @@ echo Processing karaf...
 if not exist "%OUT_DIR%\karaf" mkdir "%OUT_DIR%\karaf"
 python %SCRIPT% "%DOT_DIR%\karaf-file.dot" "%OUT_DIR%\karaf\results.csv" --random-iterations %ITERATIONS% --per-node "%OUT_DIR%\karaf\results-per-node.csv"
 
-:: --- LUCENE-SOLR ---
-echo Processing lucene-solr...
-if not exist "%OUT_DIR%\lucene-solr" mkdir "%OUT_DIR%\lucene-solr"
-python %SCRIPT% "%DOT_DIR%\lucene-solr-file.dot" "%OUT_DIR%\lucene-solr\results.csv" --random-iterations %ITERATIONS% --per-node "%OUT_DIR%\lucene-solr\results-per-node.csv"
+:: --- DEPENDS ---
+echo Processing depends...
+if not exist "%OUT_DIR%\depends" mkdir "%OUT_DIR%\depends"
+python %SCRIPT% "%DOT_DIR%\depends-file.dot" "%OUT_DIR%\depends\results.csv" --random-iterations %ITERATIONS% --per-node "%OUT_DIR%\lucene-solr\results-per-node.csv"
 
 :: --- PHOENIX ---
 echo Processing phoenix...
