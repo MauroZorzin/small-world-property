@@ -7,7 +7,7 @@ formulas and can be verified with pencil and paper.
 
 Fagiolo (2007) formulas used
 ─────────────────────────────
-Let A be the binary adjacency matrix (A[i,j]=1 ⟺ edge i→j).
+Let A be the binary adjacency matrix (A[i,j]=1 ⟺ edge i->j).
   d_in_i  = Σ_j A[j,i]          (column sum = in-degree)
   d_out_i = Σ_j A[i,j]          (row sum    = out-degree)
   d_tot_i = d_in_i + d_out_i
@@ -19,7 +19,7 @@ Let A be the binary adjacency matrix (A[i,j]=1 ⟺ edge i→j).
   c_out_i        = (A²·Aᵀ)[i,i]        / (d_out_i * (d_out_i - 1))
   c_overall_i    = (A+Aᵀ)³[i,i]        / (2*(d_tot_i*(d_tot_i-1) - 2*d_bil_i))
 
-Each denominator = 0 ⟹ coefficient = 0 (by convention).
+Each denominator = 0 -> coefficient = 0 (by convention).
 """
 
 import sys
@@ -60,7 +60,7 @@ passed = failed = 0
 def check(label, got, expected):
     global passed, failed
     ok = abs(got - expected) < ATOL
-    status = "✓" if ok else "✗"
+    status = "ture" if ok else "false"
     if ok:
         passed += 1
     else:
@@ -74,7 +74,7 @@ def section(title):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 1 — Pure directed 3-cycle:  0→1→2→0
+# TEST 1   Pure directed 3-cycle:  0->1->2->0
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # Adjacency matrix (row=from, col=to):
@@ -88,25 +88,25 @@ def section(title):
 #   d_in = 1, d_out = 1, d_bil = 0
 #
 # A² = A@A:
-#   (A²)[i,j] counts 2-step paths i→?→j
-#   0→1→2: A²[0,2]=1   1→2→0: A²[1,0]=1   2→0→1: A²[2,1]=1
+#   (A²)[i,j] counts 2-step paths i->?->j
+#   0->1->2: A²[0,2]=1   1->2->0: A²[1,0]=1   2->0->1: A²[2,1]=1
 #   All other entries = 0.
 #
 # A³ = A²@A:
 #   Only 3-cycle closes back to start: A³[0,0]=A³[1,1]=A³[2,2]=1
 #
-# c_cycle = A³[i,i] / (d_in*d_out - d_bil) = 1 / (1*1-0) = 1.0  ✓
+# c_cycle = A³[i,i] / (d_in*d_out - d_bil) = 1 / (1*1-0) = 1.0  Yes
 #
 # Aᵀ@A (for c_middleman numerator = A@Aᵀ@A):
-#   Middleman at i means: j→i→k AND j→k directly.
-#   No node j has both j→i and j→k for any k reachable from i.
-#   → c_middleman = 0 for all nodes.
+#   Middleman at i means: j->i->k AND j->k directly.
+#   No node j has both j->i and j->k for any k reachable from i.
+#   -> c_middleman = 0 for all nodes.
 #
-# c_in: need two distinct predecessors j,k of i with j→k.
-#   Each node has exactly one predecessor → denominator = 1*(1-1)=0 → c_in=0.
+# c_in: need two distinct predecessors j,k of i with j->k.
+#   Each node has exactly one predecessor -> denominator = 1*(1-1)=0 -> c_in=0.
 #
-# c_out: need two distinct successors j,k of i with j→k.
-#   Each node has exactly one successor → denominator = 1*(1-1)=0 → c_out=0.
+# c_out: need two distinct successors j,k of i with j->k.
+#   Each node has exactly one successor -> denominator = 1*(1-1)=0 -> c_out=0.
 #
 # c_overall = (A+Aᵀ)³[i,i] / (2*(d_tot*(d_tot-1) - 2*d_bil))
 #   d_tot = 2, d_bil = 0
@@ -129,14 +129,14 @@ def section(title):
 #       diagonal = 2 (two neighbors each with weight 1)
 #       off-diag = 1 (one shared neighbor)
 #   So (A+Aᵀ)³[i,i] = Σ_j≠i 1 * 1 = 2  (two off-diagonal entries, each = 1)
-#   → c_overall = 2 / 4 = 0.5
+#   -> c_overall = 2 / 4 = 0.5
 
-section("TEST 1 — Pure directed 3-cycle  0→1→2→0")
+section("TEST 1   Pure directed 3-cycle  0->1->2->0")
 G = nx.DiGraph([(0,1),(1,2),(2,0)])
 az = make_analyzer(G)
 r, avg = az.fagiolo_clustering_fast()
 
-# All nodes are symmetric — check all three
+# All nodes are symmetric   check all three
 for i, name in enumerate(["node 0","node 1","node 2"]):
     check(f"c_cycle     {name}", r['cycle'][i],     1.0)
     check(f"c_middleman {name}", r['middleman'][i],  0.0)
@@ -150,16 +150,16 @@ check("avg c_overall",   avg['overall'],   0.5)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 2 — Directed path: 0→1→2→3  (no triangles anywhere)
+# TEST 2   Directed path: 0->1->2->3  (no triangles anywhere)
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # No node participates in any triangle of any kind.
 # All numerators = 0, so all clustering coefficients = 0.
 #
 # Nodes with degree < 2 also have denominator = 0
-# (e.g. node 0: d_in=0, node 3: d_out=0) — convention forces 0.
+# (e.g. node 0: d_in=0, node 3: d_out=0)   convention forces 0.
 
-section("TEST 2 — Directed path  0→1→2→3  (no triangles)")
+section("TEST 2   Directed path  0->1->2->3  (no triangles)")
 G = nx.DiGraph([(0,1),(1,2),(2,3)])
 az = make_analyzer(G)
 r, avg = az.fagiolo_clustering_fast()
@@ -171,10 +171,10 @@ for metric in ['cycle','middleman','in','out','overall']:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 3 — Fully bidirectional triangle: 0↔1↔2↔0
+# TEST 3   Fully bidirectional triangle: 0↔1↔2↔0
 # ══════════════════════════════════════════════════════════════════════════════
 #
-# Edges: 0→1, 1→0, 1→2, 2→1, 0→2, 2→0
+# Edges: 0->1, 1->0, 1->2, 2->1, 0->2, 2->0
 #
 # For every node (all symmetric):
 #   d_in = 2, d_out = 2, d_tot = 4, d_bil = 2
@@ -186,27 +186,27 @@ for metric in ['cycle','middleman','in','out','overall']:
 #   2 [ 1  1  0 ]
 #
 # A³[i,i]: count closed 3-step directed walks starting and ending at i.
-#   From node 0: 0→1→0→... can't return; 0→1→2→0 ✓; 0→2→1→0 ✓; 0→2→0→... no.
+#   From node 0: 0->1->0->... can't return; 0->1->2->0 ture; 0->2->1->0 ture; 0->2->0->... no.
 #   = 2 walks for each node.
 #
 # c_cycle = 2 / (2*2 - 2) = 2/2 = 1.0
 #
 # c_middleman: (A·Aᵀ·A)[i,i].
-#   Counts triples (j,k) with j→i, i→k, j→k.
+#   Counts triples (j,k) with j->i, i->k, j->k.
 #   Node 0: neighbors in = {1,2}, neighbors out = {1,2}
-#   Pairs (j,k): (1,1) invalid same; (1,2) check 1→2 ✓; (2,1) check 2→1 ✓; (2,2) invalid.
-#   → 2 valid triples.
+#   Pairs (j,k): (1,1) invalid same; (1,2) check 1->2 ture; (2,1) check 2->1 ture; (2,2) invalid.
+#   -> 2 valid triples.
 #   c_middleman = 2 / (2*2 - 2) = 1.0
 #
 # c_in: (Aᵀ·A²)[i,i] / (d_in*(d_in-1))
-#   Counts triples (j,k) with j→i, k→i, j→k.
-#   Node 0: in-neighbors = {1,2}. Check 1→2 ✓; 2→1 ✓ → 2 triples.
+#   Counts triples (j,k) with j->i, k->i, j->k.
+#   Node 0: in-neighbors = {1,2}. Check 1->2 ture; 2->1 ture -> 2 triples.
 #   denominator = 2*(2-1) = 2
 #   c_in = 2/2 = 1.0
 #
 # c_out: (A²·Aᵀ)[i,i] / (d_out*(d_out-1))
-#   Counts triples (j,k) with i→j, i→k, j→k.
-#   Node 0: out-neighbors = {1,2}. Check 1→2 ✓; 2→1 ✓ → 2 triples.
+#   Counts triples (j,k) with i->j, i->k, j->k.
+#   Node 0: out-neighbors = {1,2}. Check 1->2 ture; 2->1 ture -> 2 triples.
 #   denominator = 2*(2-1) = 2
 #   c_out = 2/2 = 1.0
 #
@@ -224,7 +224,7 @@ for metric in ['cycle','middleman','in','out','overall']:
 #   denominator = 2*(4*3 - 2*2) = 2*(12-4) = 16
 #   c_overall = 16/16 = 1.0
 
-section("TEST 3 — Fully bidirectional triangle  0↔1↔2↔0")
+section("TEST 3   Fully bidirectional triangle  0↔1↔2↔0")
 G = nx.DiGraph([(0,1),(1,0),(1,2),(2,1),(0,2),(2,0)])
 az = make_analyzer(G)
 r, avg = az.fagiolo_clustering_fast()
@@ -238,21 +238,21 @@ for i, name in enumerate(["node 0","node 1","node 2"]):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 4 — Pure out-star:  0→1, 0→2, 0→3
+# TEST 4   Pure out-star:  0->1, 0->2, 0->3
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # No triangles of any kind exist.
 # Node 0: d_out=3, d_in=0, d_bil=0
-#   c_cycle:     denom = 0*3-0 = 0  → 0
-#   c_middleman: denom = 0*3-0 = 0  → 0
-#   c_in:        denom = 0*(0-1)=0  → 0
-#   c_out:       denom = 3*(3-1)=6, but A²·Aᵀ[0,0]=0 (no out-neighbors connect) → 0
-#   c_overall:   d_tot=3, denom=2*(3*2-0)=12, (A+Aᵀ)³[0,0]=0 (leaves have no edges between them) → 0
+#   c_cycle:     denom = 0*3-0 = 0  -> 0
+#   c_middleman: denom = 0*3-0 = 0  -> 0
+#   c_in:        denom = 0*(0-1)=0  -> 0
+#   c_out:       denom = 3*(3-1)=6, but A²·Aᵀ[0,0]=0 (no out-neighbors connect) -> 0
+#   c_overall:   d_tot=3, denom=2*(3*2-0)=12, (A+Aᵀ)³[0,0]=0 (leaves have no edges between them) -> 0
 #
 # Leaf nodes (1,2,3): d_in=1, d_out=0
-#   All denoms = 0 → all coefficients = 0
+#   All denoms = 0 -> all coefficients = 0
 
-section("TEST 4 — Pure out-star  0→{1,2,3}  (no triangles)")
+section("TEST 4   Pure out-star  0->{1,2,3}  (no triangles)")
 G = nx.DiGraph([(0,1),(0,2),(0,3)])
 az = make_analyzer(G)
 r, avg = az.fagiolo_clustering_fast()
@@ -264,17 +264,17 @@ for metric in ['cycle','middleman','in','out','overall']:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 5 — Single bidirectional edge:  0↔1
+# TEST 5   Single bidirectional edge:  0↔1
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # Both nodes: d_in=1, d_out=1, d_bil=1
-#   c_cycle:     denom = 1*1-1 = 0 → 0
-#   c_middleman: denom = 1*1-1 = 0 → 0
-#   c_in:        denom = 1*0   = 0 → 0
-#   c_out:       denom = 1*0   = 0 → 0
-#   c_overall:   d_tot=2, denom=2*(2*1-2*1)=2*(2-2)=0 → 0
+#   c_cycle:     denom = 1*1-1 = 0 -> 0
+#   c_middleman: denom = 1*1-1 = 0 -> 0
+#   c_in:        denom = 1*0   = 0 -> 0
+#   c_out:       denom = 1*0   = 0 -> 0
+#   c_overall:   d_tot=2, denom=2*(2*1-2*1)=2*(2-2)=0 -> 0
 
-section("TEST 5 — Single bidirectional edge  0↔1  (all denoms = 0)")
+section("TEST 5   Single bidirectional edge  0↔1  (all denoms = 0)")
 G = nx.DiGraph([(0,1),(1,0)])
 az = make_analyzer(G)
 r, avg = az.fagiolo_clustering_fast()
@@ -285,11 +285,11 @@ for metric in ['cycle','middleman','in','out','overall']:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 6 — Mixed graph: one cycle triangle + one fan triangle
+# TEST 6   Mixed graph: one cycle triangle + one fan triangle
 #
 # Nodes: 0,1,2,3
-# Edges: 0→1, 1→2, 2→0   (pure directed cycle through 0,1,2)
-#        0→3, 1→3          (0 and 1 both point to 3 — out-fan at 0 and 1)
+# Edges: 0->1, 1->2, 2->0   (pure directed cycle through 0,1,2)
+#        0->3, 1->3          (0 and 1 both point to 3   out-fan at 0 and 1)
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # A (4×4):
@@ -301,48 +301,48 @@ for metric in ['cycle','middleman','in','out','overall']:
 #
 # d_in:  node0=1, node1=1, node2=1, node3=2
 # d_out: node0=2, node1=2, node2=1, node3=0
-# d_bil: no bidirectional edges → all 0
+# d_bil: no bidirectional edges -> all 0
 #
 # ── c_cycle ──────────────────────────────────────────────────────────────────
-#   Need closed 3-cycles i→j→k→i.
-#   Only existing cycle: 0→1→2→0.
-#   Node 0: 1 cycle (0→1→2→0). denom = d_in*d_out - d_bil = 1*2-0 = 2. c_cycle = 1/2 = 0.5
-#   Node 1: 1 cycle (1→2→0→1). denom = 1*2-0 = 2.                       c_cycle = 1/2 = 0.5
-#   Node 2: 1 cycle (2→0→1→2). denom = 1*1-0 = 1.                       c_cycle = 1/1 = 1.0
+#   Need closed 3-cycles i->j->k->i.
+#   Only existing cycle: 0->1->2->0.
+#   Node 0: 1 cycle (0->1->2->0). denom = d_in*d_out - d_bil = 1*2-0 = 2. c_cycle = 1/2 = 0.5
+#   Node 1: 1 cycle (1->2->0->1). denom = 1*2-0 = 2.                       c_cycle = 1/2 = 0.5
+#   Node 2: 1 cycle (2->0->1->2). denom = 1*1-0 = 1.                       c_cycle = 1/1 = 1.0
 #   Node 3: no cycle, denom = 2*0-0 = 0.                                 c_cycle = 0
 #
 # ── c_middleman ──────────────────────────────────────────────────────────────
-#   Counts (j,k): j→i, i→k, j→k.
+#   Counts (j,k): j->i, i->k, j->k.
 #   Node 0 (in-neighbor={2}, out-neighbors={1,3}):
-#     j=2: check 2→1? No. 2→3? No. → 0
+#     j=2: check 2->1? No. 2->3? No. -> 0
 #   Node 1 (in-neighbor={0}, out-neighbors={2,3}):
-#     j=0: check 0→2? No. 0→3? Yes ✓. → 1 triple.
+#     j=0: check 0->2? No. 0->3? Yes ture. -> 1 triple.
 #     c_mid = 1/(1*2-0) = 0.5
 #   Node 2 (in-neighbor={1}, out-neighbor={0}):
-#     j=1: check 1→0? No. → 0
+#     j=1: check 1->0? No. -> 0
 #   Node 3 (in-neighbors={0,1}, d_out=0): denom=2*0-0=0. c_mid=0
 #
 # ── c_in ─────────────────────────────────────────────────────────────────────
-#   Counts (j,k): j→i, k→i, j→k  (two distinct predecessors where one → other)
-#   Nodes with d_in < 2: denominator=0 → c_in=0.  (nodes 0,1,2 all have d_in=1)
-#   Node 3 (in-neighbors={0,1}): check 0→1 ✓ and 1→0? No.
-#     → 1 ordered pair (j=0,k=1) where 0→1.
+#   Counts (j,k): j->i, k->i, j->k  (two distinct predecessors where one -> other)
+#   Nodes with d_in < 2: denominator=0 -> c_in=0.  (nodes 0,1,2 all have d_in=1)
+#   Node 3 (in-neighbors={0,1}): check 0->1 ture and 1->0? No.
+#     -> 1 ordered pair (j=0,k=1) where 0->1.
 #     denom = 2*(2-1) = 2.
 #     c_in = 1/2 = 0.5
 #
 # ── c_out ────────────────────────────────────────────────────────────────────
-#   Counts (j,k): i→j, i→k, j→k  (two distinct successors where one → other)
-#   Nodes with d_out < 2: denominator=0 → c_out=0.  (nodes 2,3 have d_out<2)
-#   Node 0 (out-neighbors={1,3}): check 1→3 ✓; check 3→1? No. → 1 pair.
+#   Counts (j,k): i->j, i->k, j->k  (two distinct successors where one -> other)
+#   Nodes with d_out < 2: denominator=0 -> c_out=0.  (nodes 2,3 have d_out<2)
+#   Node 0 (out-neighbors={1,3}): check 1->3 ture; check 3->1? No. -> 1 pair.
 #     denom = 2*(2-1) = 2.
 #     c_out = 1/2 = 0.5
-#   Node 1 (out-neighbors={2,3}): check 2→3? No; check 3→2? No. → 0 pairs.
+#   Node 1 (out-neighbors={2,3}): check 2->3? No; check 3->2? No. -> 0 pairs.
 #     c_out = 0/2 = 0.0
 #
 # ── c_overall ────────────────────────────────────────────────────────────────
 #   (A+Aᵀ)³[i,i] / (2*(d_tot*(d_tot-1) - 2*d_bil))
 #
-#   A+Aᵀ (undirected adjacency with doubled bidirectional — here all weight 1
+#   A+Aᵀ (undirected adjacency with doubled bidirectional, here all weight 1
 #          because no bidirectional edges):
 #       0  1  2  3
 #   0 [ 0  1  1  1 ]
@@ -351,10 +351,10 @@ for metric in ['cycle','middleman','in','out','overall']:
 #   3 [ 1  1  0  0 ]
 #
 #   (A+Aᵀ)² diagonal counts 2-step return walks = number of neighbors:
-#     node0: neighbors {1,2,3} → 3 neighbors → (A+Aᵀ)²[0,0] = 3
-#     node1: neighbors {0,2,3} → 3            → (A+Aᵀ)²[1,1] = 3
-#     node2: neighbors {0,1}   → 2            → (A+Aᵀ)²[2,2] = 2
-#     node3: neighbors {0,1}   → 2            → (A+Aᵀ)²[3,3] = 2
+#     node0: neighbors {1,2,3} -> 3 neighbors -> (A+Aᵀ)²[0,0] = 3
+#     node1: neighbors {0,2,3} -> 3            -> (A+Aᵀ)²[1,1] = 3
+#     node2: neighbors {0,1}   -> 2            -> (A+Aᵀ)²[2,2] = 2
+#     node3: neighbors {0,1}   -> 2            -> (A+Aᵀ)²[3,3] = 2
 #
 #   (A+Aᵀ)³[i,i] = Σ_j (A+Aᵀ)[i,j] * (A+Aᵀ)²[j,i]
 #   We need (A+Aᵀ)²[j,i] = number of 2-step paths from j to i in the sym graph.
@@ -392,24 +392,24 @@ for metric in ['cycle','middleman','in','out','overall']:
 #   Node 0: Σ over neighbors {1,2,3}:
 #     B[0,1]*B²[1,0] + B[0,2]*B²[2,0] + B[0,3]*B²[3,0]
 #     = 1*2 + 1*1 + 1*1 = 4
-#   denom0 = 2*(3*2 - 2*0) = 12  →  c_overall_0 = 4/12 = 1/3
+#   denom0 = 2*(3*2 - 2*0) = 12  ->  c_overall_0 = 4/12 = 1/3
 #
 #   Node 1: Σ over neighbors {0,2,3}:
 #     B[1,0]*B²[0,1] + B[1,2]*B²[2,1] + B[1,3]*B²[3,1]
 #     = 1*2 + 1*1 + 1*1 = 4
-#   denom1 = 2*(3*2 - 0) = 12  →  c_overall_1 = 4/12 = 1/3
+#   denom1 = 2*(3*2 - 0) = 12  ->  c_overall_1 = 4/12 = 1/3
 #
 #   Node 2: Σ over neighbors {0,1}:
 #     B[2,0]*B²[0,2] + B[2,1]*B²[1,2]
 #     = 1*1 + 1*1 = 2
-#   denom2 = 2*(2*1 - 0) = 4  →  c_overall_2 = 2/4 = 0.5
+#   denom2 = 2*(2*1 - 0) = 4  ->  c_overall_2 = 2/4 = 0.5
 #
 #   Node 3: Σ over neighbors {0,1}:
 #     B[3,0]*B²[0,3] + B[3,1]*B²[1,3]
 #     = 1*1 + 1*1 = 2
-#   denom3 = 2*(2*1 - 0) = 4  →  c_overall_3 = 2/4 = 0.5
+#   denom3 = 2*(2*1 - 0) = 4  ->  c_overall_3 = 2/4 = 0.5
 
-section("TEST 6 — Mixed graph: cycle 0→1→2→0 plus fans 0→3, 1→3")
+section("TEST 6   Mixed graph: cycle 0->1->2->0 plus fans 0->3, 1->3")
 G = nx.DiGraph([(0,1),(1,2),(2,0),(0,3),(1,3)])
 az = make_analyzer(G)
 r, avg = az.fagiolo_clustering_fast()
@@ -446,9 +446,9 @@ check("c_overall   node 3", r['overall'][3],    0.5)
 print(f"\n{'═'*60}")
 print(f"  Results: {passed}/{passed+failed} tests passed")
 if failed == 0:
-    print("  All tests passed ✓")
+    print("  All tests passed ture")
 else:
-    print(f"  {failed} test(s) FAILED ✗")
+    print(f"  {failed} test(s) FAILED ")
 print(f"{'═'*60}\n")
 
 sys.exit(0 if failed == 0 else 1)

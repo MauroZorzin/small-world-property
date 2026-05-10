@@ -1,19 +1,7 @@
 #!/usr/bin/env python3
 """
 Directed Graph Analysis CLI Tool with Fagiolo Clustering
-Usage: python pipeline_v2.py input.dot output.csv [--per-node output_nodes.csv] [--random-iterations N]
-
-Changes from v1
-───────────────
-* Three distinct path-length variants:
-    L_lscc       — average path length on the Largest Strongly Connected Component
-    L_allscc     — pairs-weighted average across ALL non-trivial SCCs
-    L_undirected — average path length on the undirected version (largest WCC)
-* All five Fagiolo clustering variants used as C in sigma:
-    overall / cycle / middleman / in / out
-* 15 sigma values produced (3 L x 5 C), all stored in the output CSV.
-* SCC coverage statistics exported so the paper can report what fraction of
-  the graph contributes to each L variant.
+Usage: python pipeline.py input.dot output.csv [--per-node output_nodes.csv] [--random-iterations N]
 """
 import re
 import networkx as nx
@@ -22,22 +10,133 @@ import pandas as pd
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
-C_KEYS = ['overall', 'cycle', 'middleman', 'in', 'out']
-L_KEYS = ['lscc', 'allscc', 'undirected']
+C_KEYS  = ['overall', 'cycle', 'middleman', 'in', 'out']
+L_KEYS  = ['lscc', 'allscc', 'undirected']
+# Three scopes for the C numerator in sigma
+C_SCOPES = ['full', 'lscc', 'allscc']
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Low-level helper: compute Fagiolo clustering on an arbitrary DiGraph
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fagiolo_on_graph(G: nx.DiGraph) -> Tuple[Dict, Dict]:
+    """
+    Vectorised Fagiolo (2007) directed clustering for a given DiGraph.
+    Returns (per_node_dict, averages_dict).
+
+    The 'per_node_dict' contains lists indexed by G's node order.
+    The 'averages_dict' contains scalar averages (skipping non-finite values).
+    """
+    n = G.number_of_nodes()
+    if n == 0:
+        empty = {k: float('nan') for k in C_KEYS}
+        return {k: [] for k in C_KEYS + ['in_degree', 'out_degree',
+                                          'total_degree', 'bilateral_degree']}, empty
+
+    nodes = list(G.nodes())
+    A  = nx.to_scipy_sparse_array(G, nodelist=nodes, format='csr', dtype=np.float32)
+    AT = A.T
+
+    d_in  = np.array(A.sum(axis=0)).flatten()
+    d_out = np.array(A.sum(axis=1)).flatten()
+    d_tot = d_in + d_out
+
+    bilateral_matrix = A.multiply(AT)
+    d_bilateral = np.array(bilateral_matrix.sum(axis=1)).flatten()
+
+    A2     = A  @ A
+    A3     = A2 @ A
+    AAT_A  = A  @ AT @ A
+    AT_A2  = AT @ A2
+    A2_AT  = A2 @ AT
+    A_sym  = A  + AT
+    A_sym3 = A_sym @ A_sym @ A_sym
+
+    diag_A3     = np.array(A3.diagonal()).flatten()
+    diag_AAT_A  = np.array(AAT_A.diagonal()).flatten()
+    diag_AT_A2  = np.array(AT_A2.diagonal()).flatten()
+    diag_A2_AT  = np.array(A2_AT.diagonal()).flatten()
+    diag_A_sym3 = np.array(A_sym3.diagonal()).flatten()
+
+    denom_cycle     = d_in * d_out - d_bilateral
+    denom_middleman = d_in * d_out - d_bilateral
+    denom_in        = d_in  * (d_in  - 1)
+    denom_out       = d_out * (d_out - 1)
+    denom_overall   = 2 * (d_tot * (d_tot - 1) - 2 * d_bilateral)
+
+    def _div(num, den):
+        return np.divide(num, den, out=np.zeros_like(num, dtype=np.float64), where=den != 0)
+
+    c_cycle     = _div(diag_A3,     denom_cycle)
+    c_middleman = _div(diag_AAT_A,  denom_middleman)
+    c_in        = _div(diag_AT_A2,  denom_in)
+    c_out       = _div(diag_A2_AT,  denom_out)
+    c_overall   = _div(diag_A_sym3, denom_overall)
+
+    per_node = {
+        'overall':          c_overall.tolist(),
+        'cycle':            c_cycle.tolist(),
+        'middleman':        c_middleman.tolist(),
+        'in':               c_in.tolist(),
+        'out':              c_out.tolist(),
+        'in_degree':        d_in.tolist(),
+        'out_degree':       d_out.tolist(),
+        'total_degree':     d_tot.tolist(),
+        'bilateral_degree': d_bilateral.tolist(),
+    }
+
+    averages = {}
+    for key in C_KEYS:
+        vals = [v for v in per_node[key] if np.isfinite(v)]
+        averages[key] = float(np.mean(vals)) if vals else float('nan')
+
+    return per_node, averages
+
+
+def _allscc_weighted_clustering(G: nx.DiGraph) -> Dict[str, float]:
+    """
+    Pairs-weighted average of Fagiolo clustering across ALL non-trivial SCCs.
+
+    avg_k = sum_k [ n_k*(n_k-1) * C_k ] / sum_k [ n_k*(n_k-1) ]
+
+    Returns a dict with keys matching C_KEYS; value is nan if no non-trivial SCCs.
+    """
+    sccs = [s for s in nx.strongly_connected_components(G) if len(s) > 1]
+    if not sccs:
+        return {k: float('nan') for k in C_KEYS}
+
+    weighted = {k: 0.0 for k in C_KEYS}
+    total_weight = 0.0
+
+    for scc in sccs:
+        w = len(scc) * (len(scc) - 1)
+        _, avg = _fagiolo_on_graph(G.subgraph(scc).copy())
+        for k in C_KEYS:
+            if np.isfinite(avg[k]):
+                weighted[k] += w * avg[k]
+        total_weight += w
+
+    if total_weight == 0:
+        return {k: float('nan') for k in C_KEYS}
+    return {k: weighted[k] / total_weight for k in C_KEYS}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Main analyser class
+# ─────────────────────────────────────────────────────────────────────────────
 
 class FagioloClusteringAnalyzer:
     """
     Analyzer for directed graphs implementing Fagiolo (2007) clustering
-    coefficients and small-world sigma across multiple L/C variants.
+    coefficients and small-world sigma across multiple C-scope / L variants.
     """
 
     def __init__(self, graph_path: str):
-        """Load graph from .dot file."""
         print(f"Loading graph from {graph_path}...", file=sys.stderr)
         self.G = nx.DiGraph(nx.drawing.nx_pydot.read_dot(graph_path))
         self.n = self.G.number_of_nodes()
@@ -74,7 +173,6 @@ class FagioloClusteringAnalyzer:
     # ── Three path-length variants ────────────────────────────────────────────
 
     def path_length_lscc(self) -> float:
-        """L on the Largest Strongly Connected Component only."""
         try:
             if nx.is_strongly_connected(self.G):
                 return nx.average_shortest_path_length(self.G)
@@ -87,12 +185,6 @@ class FagioloClusteringAnalyzer:
         return float('inf')
 
     def path_length_allscc(self) -> float:
-        """L as a pairs-weighted average across ALL non-trivial SCCs.
-
-        L_allscc = sum_k [n_k*(n_k-1) * L_k] / sum_k [n_k*(n_k-1)]
-
-        Singleton SCCs (n=1) contribute zero pairs and are skipped.
-        """
         try:
             if nx.is_strongly_connected(self.G):
                 return nx.average_shortest_path_length(self.G)
@@ -113,12 +205,6 @@ class FagioloClusteringAnalyzer:
         return float('inf')
 
     def path_length_undirected(self) -> float:
-        """L on the undirected version of the graph (largest WCC).
-
-        Converting to undirected adds the reverse direction for every edge,
-        making the graph connected in more cases and providing a lower-bound
-        estimate of average distance.
-        """
         try:
             G_und = self.G.to_undirected()
             if nx.is_connected(G_und):
@@ -132,7 +218,6 @@ class FagioloClusteringAnalyzer:
         return float('inf')
 
     def all_path_lengths(self) -> Dict[str, float]:
-        """Return all three L variants in one dict."""
         return {
             'lscc':       self.path_length_lscc(),
             'allscc':     self.path_length_allscc(),
@@ -142,7 +227,6 @@ class FagioloClusteringAnalyzer:
     # ── SCC coverage statistics ───────────────────────────────────────────────
 
     def scc_coverage_stats(self) -> Dict:
-        """Fraction of the full graph captured by non-trivial SCCs."""
         sccs = list(nx.strongly_connected_components(self.G))
         non_trivial = [s for s in sccs if len(s) > 1]
         largest = max(sccs, key=len) if sccs else set()
@@ -162,85 +246,40 @@ class FagioloClusteringAnalyzer:
             'allscc_edge_pct':      round(edges_in_sccs / self.m * 100, 2) if self.m else 0.0,
         }
 
-    # ── Bilateral edges ───────────────────────────────────────────────────────
-
-    def compute_bilateral_edges_fast(self) -> np.ndarray:
-        bilateral_matrix = self.A.multiply(self.A.T)
-        return np.array(bilateral_matrix.sum(axis=1)).flatten()
-
-    # ── Fagiolo clustering (all five variants) ────────────────────────────────
+    # ── Fagiolo clustering — three scopes ─────────────────────────────────────
 
     def fagiolo_clustering_fast(self) -> Tuple[Dict, Dict]:
+        """Full-graph Fagiolo. Returns (per_node_dict, averages_dict)."""
+        print("Computing Fagiolo clustering (full graph)...", file=sys.stderr)
+        return _fagiolo_on_graph(self.G)
+
+    def fagiolo_clustering_lscc(self) -> Dict[str, float]:
+        """Fagiolo averages computed on the LSCC subgraph only."""
+        print("Computing Fagiolo clustering (LSCC)...", file=sys.stderr)
+        sccs = list(nx.strongly_connected_components(self.G))
+        if not sccs:
+            return {k: float('nan') for k in C_KEYS}
+        largest = max(sccs, key=len)
+        if len(largest) < 2:
+            return {k: float('nan') for k in C_KEYS}
+        _, avg = _fagiolo_on_graph(self.G.subgraph(largest).copy())
+        return avg
+
+    def fagiolo_clustering_allscc(self) -> Dict[str, float]:
+        """Pairs-weighted Fagiolo average across ALL non-trivial SCCs."""
+        print("Computing Fagiolo clustering (all SCCs)...", file=sys.stderr)
+        return _allscc_weighted_clustering(self.G)
+
+    def all_fagiolo_clustering(self) -> Dict[str, Dict[str, float]]:
         """
-        Vectorised Fagiolo (2007) directed clustering coefficients.
-        Returns (per_node_dict, averages_dict).
-
-        Variants
-        --------
-        overall    (A+At)^3[i,i]  / (2*(d_tot*(d_tot-1) - 2*d_bil))
-        cycle      A^3[i,i]        / (d_in*d_out - d_bil)
-        middleman  (A*At*A)[i,i]  / (d_in*d_out - d_bil)
-        in         (At*A^2)[i,i]  / (d_in*(d_in-1))
-        out        (A^2*At)[i,i]  / (d_out*(d_out-1))
+        Returns clustering averages for all three scopes in one dict-of-dicts:
+            {'full': {...}, 'lscc': {...}, 'allscc': {...}}
+        Each inner dict has keys from C_KEYS.
         """
-        print("Computing Fagiolo clustering coefficients...", file=sys.stderr)
-
-        A  = self.A
-        AT = A.T
-
-        d_in  = np.array(A.sum(axis=0)).flatten()
-        d_out = np.array(A.sum(axis=1)).flatten()
-        d_tot = d_in + d_out
-
-        d_bilateral = self.compute_bilateral_edges_fast()
-
-        A2     = A  @ A
-        A3     = A2 @ A
-        AAT_A  = A  @ AT @ A
-        AT_A2  = AT @ A2
-        A2_AT  = A2 @ AT
-        A_sym  = A  + AT
-        A_sym3 = A_sym @ A_sym @ A_sym
-
-        diag_A3     = np.array(A3.diagonal()).flatten()
-        diag_AAT_A  = np.array(AAT_A.diagonal()).flatten()
-        diag_AT_A2  = np.array(AT_A2.diagonal()).flatten()
-        diag_A2_AT  = np.array(A2_AT.diagonal()).flatten()
-        diag_A_sym3 = np.array(A_sym3.diagonal()).flatten()
-
-        denom_cycle     = d_in * d_out - d_bilateral
-        denom_middleman = d_in * d_out - d_bilateral
-        denom_in        = d_in  * (d_in  - 1)
-        denom_out       = d_out * (d_out - 1)
-        denom_overall   = 2 * (d_tot * (d_tot - 1) - 2 * d_bilateral)
-
-        def _div(num, den):
-            return np.divide(num, den, out=np.zeros_like(num), where=den != 0)
-
-        c_cycle     = _div(diag_A3,     denom_cycle)
-        c_middleman = _div(diag_AAT_A,  denom_middleman)
-        c_in        = _div(diag_AT_A2,  denom_in)
-        c_out       = _div(diag_A2_AT,  denom_out)
-        c_overall   = _div(diag_A_sym3, denom_overall)
-
-        per_node = {
-            'overall':          c_overall.tolist(),
-            'cycle':            c_cycle.tolist(),
-            'middleman':        c_middleman.tolist(),
-            'in':               c_in.tolist(),
-            'out':              c_out.tolist(),
-            'in_degree':        d_in.tolist(),
-            'out_degree':       d_out.tolist(),
-            'total_degree':     d_tot.tolist(),
-            'bilateral_degree': d_bilateral.tolist(),
-        }
-
-        averages = {}
-        for key in C_KEYS:
-            vals = [v for v in per_node[key] if np.isfinite(v)]
-            averages[key] = float(np.mean(vals)) if vals else 0.0
-
-        return per_node, averages
+        _, full_avg  = self.fagiolo_clustering_fast()
+        lscc_avg     = self.fagiolo_clustering_lscc()
+        allscc_avg   = self.fagiolo_clustering_allscc()
+        return {'full': full_avg, 'lscc': lscc_avg, 'allscc': allscc_avg}
 
     # ── Per-node CSV export ───────────────────────────────────────────────────
 
@@ -297,48 +336,56 @@ class FagioloClusteringAnalyzer:
             G_rand = nx.erdos_renyi_graph(self.n, p, directed=True)
         return G_rand
 
-    # ── Small-world sigma (15 variants) ──────────────────────────────────────
+    # ── Small-world sigma (45 variants) ──────────────────────────────────────
 
     def compute_small_worldness(self, num_random: int = 10) -> Dict:
         """
         Compute sigma for every combination of:
-            C in {overall, cycle, middleman, in, out}   (5 Fagiolo variants)
-            L in {lscc, allscc, undirected}             (3 path-length variants)
+            C-scope in {full, lscc, allscc}            (3 scopes)
+            C-variant in {overall, cycle, middleman, in, out}  (5 variants)
+            L-variant in {lscc, allscc, undirected}    (3 path-length variants)
 
-        Produces 15 sigma values.  All random graphs are evaluated on all
-        variants in a single pass so baselines are internally consistent.
+        → 3 × 5 × 3 = 45 sigma values.
+
+        Random-graph baselines are computed for all three C-scopes in a single
+        pass per random graph, keeping baselines internally consistent.
 
         Output key naming
         -----------------
-        C_orig_<c>               original clustering value for variant c
-        C_rand_mean_<c>          mean over random graphs
-        C_rand_std_<c>           std  over random graphs
-        L_orig_<l>               original path length for variant l
-        L_rand_mean_<l>          mean over random graphs
-        L_rand_std_<l>           std  over random graphs
-        sigma_<c>_<l>            small-world coefficient  (C/Crand) / (L/Lrand)
-        is_smallworld_<c>_<l>    True when sigma > 1
+        C_orig_<scope>_<c>               original clustering
+        C_rand_mean_<scope>_<c>
+        C_rand_std_<scope>_<c>
+        L_orig_<l>                        original path length
+        L_rand_mean_<l>
+        L_rand_std_<l>
+        sigma_<c>_<scope>_<l>             small-world sigma
+        is_smallworld_<c>_<scope>_<l>
         """
+        n_sigma = len(C_KEYS) * len(C_SCOPES) * len(L_KEYS)
         print(
             f"Computing small-worldness "
             f"({num_random} random graphs, "
-            f"{len(C_KEYS)} C-variants x {len(L_KEYS)} L-variants "
-            f"= {len(C_KEYS) * len(L_KEYS)} sigma values)...",
+            f"{len(C_KEYS)} C-variants × {len(C_SCOPES)} C-scopes × {len(L_KEYS)} L-variants "
+            f"= {n_sigma} sigma values)...",
             file=sys.stderr
         )
 
-        # Original values
-        _, C_orig = self.fagiolo_clustering_fast()
-        L_orig    = self.all_path_lengths()
+        # ── Original values ──────────────────────────────────────────────────
+        C_orig_all = self.all_fagiolo_clustering()   # {scope: {variant: float}}
+        L_orig     = self.all_path_lengths()
 
-        # Accumulate random-graph values
-        rand_C: Dict[str, list] = {k: [] for k in C_KEYS}
+        # ── Accumulate random-graph baselines ────────────────────────────────
+        # rand_C[scope][variant] = list of floats
+        rand_C: Dict[str, Dict[str, list]] = {
+            scope: {k: [] for k in C_KEYS} for scope in C_SCOPES
+        }
         rand_L: Dict[str, list] = {k: [] for k in L_KEYS}
 
         for i in range(num_random):
             print(f"  Random graph {i+1}/{num_random}...", end='\r', file=sys.stderr)
             G_rand = self.generate_random_directed_graph()
 
+            # Build a lightweight proxy (no __init__ I/O overhead)
             r = FagioloClusteringAnalyzer.__new__(FagioloClusteringAnalyzer)
             r.G              = G_rand
             r.n              = G_rand.number_of_nodes()
@@ -349,10 +396,17 @@ class FagioloClusteringAnalyzer:
                 G_rand, nodelist=r.original_nodes, format='csr', dtype=np.float32
             )
 
-            _, r_C = r.fagiolo_clustering_fast()
-            for k in C_KEYS:
-                if np.isfinite(r_C[k]):
-                    rand_C[k].append(r_C[k])
+            # All three C-scopes in one pass
+            r_C_all = {
+                'full':   _fagiolo_on_graph(G_rand)[1],
+                'lscc':   r.fagiolo_clustering_lscc(),
+                'allscc': r.fagiolo_clustering_allscc(),
+            }
+            for scope in C_SCOPES:
+                for k in C_KEYS:
+                    v = r_C_all[scope][k]
+                    if np.isfinite(v):
+                        rand_C[scope][k].append(v)
 
             r_L = r.all_path_lengths()
             for k in L_KEYS:
@@ -361,43 +415,58 @@ class FagioloClusteringAnalyzer:
 
         print("", file=sys.stderr)
 
-        # Aggregate
-        C_rand_mean = {k: float(np.mean(rand_C[k])) if rand_C[k] else float('nan')
-                       for k in C_KEYS}
-        C_rand_std  = {k: float(np.std(rand_C[k]))  if len(rand_C[k]) > 1 else 0.0
-                       for k in C_KEYS}
+        # ── Aggregate ────────────────────────────────────────────────────────
+        C_rand_mean: Dict[str, Dict[str, float]] = {}
+        C_rand_std:  Dict[str, Dict[str, float]] = {}
+        for scope in C_SCOPES:
+            C_rand_mean[scope] = {
+                k: float(np.mean(rand_C[scope][k])) if rand_C[scope][k] else float('nan')
+                for k in C_KEYS
+            }
+            C_rand_std[scope] = {
+                k: float(np.std(rand_C[scope][k])) if len(rand_C[scope][k]) > 1 else 0.0
+                for k in C_KEYS
+            }
+
         L_rand_mean = {k: float(np.mean(rand_L[k])) if rand_L[k] else float('nan')
                        for k in L_KEYS}
         L_rand_std  = {k: float(np.std(rand_L[k]))  if len(rand_L[k]) > 1 else 0.0
                        for k in L_KEYS}
 
-        def _sigma(c_key: str, l_key: str) -> float:
-            C  = C_orig[c_key]
+        def _sigma(scope: str, c_key: str, l_key: str) -> float:
+            C  = C_orig_all[scope][c_key]
             L  = L_orig[l_key]
-            Cr = C_rand_mean[c_key]
+            Cr = C_rand_mean[scope][c_key]
             Lr = L_rand_mean[l_key]
             if all(np.isfinite(v) for v in [C, L, Cr, Lr]) and Cr > 0 and Lr > 0:
                 return float((C / Cr) / (L / Lr))
             return float('nan')
 
-        # Build output dict
+        # ── Build output dict ─────────────────────────────────────────────────
         out: Dict = {}
 
-        for k in C_KEYS:
-            out[f'C_orig_{k}']      = C_orig[k]
-            out[f'C_rand_mean_{k}'] = C_rand_mean[k]
-            out[f'C_rand_std_{k}']  = C_rand_std[k]
+        # C originals and baselines (scope × variant)
+        for scope in C_SCOPES:
+            for k in C_KEYS:
+                out[f'C_orig_{scope}_{k}']      = C_orig_all[scope][k]
+                out[f'C_rand_mean_{scope}_{k}'] = C_rand_mean[scope][k]
+                out[f'C_rand_std_{scope}_{k}']  = C_rand_std[scope][k]
 
+        # L originals and baselines (variant only, shared across C-scopes)
         for k in L_KEYS:
             out[f'L_orig_{k}']      = L_orig[k]
             out[f'L_rand_mean_{k}'] = L_rand_mean[k]
             out[f'L_rand_std_{k}']  = L_rand_std[k]
 
+        # Sigma grid: variant × scope × L-variant
         for c_key in C_KEYS:
-            for l_key in L_KEYS:
-                s = _sigma(c_key, l_key)
-                out[f'sigma_{c_key}_{l_key}']         = s
-                out[f'is_smallworld_{c_key}_{l_key}'] = bool(s > 1) if np.isfinite(s) else False
+            for scope in C_SCOPES:
+                for l_key in L_KEYS:
+                    s = _sigma(scope, c_key, l_key)
+                    out[f'sigma_{c_key}_{scope}_{l_key}']         = s
+                    out[f'is_smallworld_{c_key}_{scope}_{l_key}'] = (
+                        bool(s > 1) if np.isfinite(s) else False
+                    )
 
         return out
 
@@ -435,15 +504,22 @@ class FagioloClusteringAnalyzer:
         results['in_degree_median']  = float(np.median(in_degrees))
         results['out_degree_median'] = float(np.median(out_degrees))
 
-        # Fagiolo clustering
-        clustering_results, clustering_avg = self.fagiolo_clustering_fast()
-        results.update({f'clustering_{k}': v for k, v in clustering_avg.items()})
+        # ── Fagiolo clustering — all three scopes ─────────────────────────────
+        clustering_results_full, clustering_avg_full = self.fagiolo_clustering_fast()
+        clustering_avg_lscc   = self.fagiolo_clustering_lscc()
+        clustering_avg_allscc = self.fagiolo_clustering_allscc()
 
-        # Per-node CSV
+        # Store averages with scope-prefixed keys
+        for k in C_KEYS:
+            results[f'clustering_full_{k}']   = clustering_avg_full[k]
+            results[f'clustering_lscc_{k}']   = clustering_avg_lscc[k]
+            results[f'clustering_allscc_{k}'] = clustering_avg_allscc[k]
+
+        # Per-node CSV (full graph only, unchanged)
         if per_node_path:
-            self.export_per_node_metrics(clustering_results, per_node_path, dot_path)
+            self.export_per_node_metrics(clustering_results_full, per_node_path, dot_path)
 
-        # Small-worldness (15 sigmas)
+        # ── Small-worldness (45 sigma values) ─────────────────────────────────
         sw = self.compute_small_worldness(num_random)
         results.update({f'smallworld_{k}': v for k, v in sw.items()})
 
@@ -453,7 +529,7 @@ class FagioloClusteringAnalyzer:
         if per_node_path:
             print(f"  Per-node saved to: {per_node_path}", file=sys.stderr)
 
-        # Human-readable summary table
+        # ── Human-readable summary ─────────────────────────────────────────────
         print("\n" + "=" * 70, file=sys.stderr)
         print("SUMMARY", file=sys.stderr)
         print("=" * 70, file=sys.stderr)
@@ -471,22 +547,29 @@ class FagioloClusteringAnalyzer:
             f"Undirected: {path_lengths['undirected']:.8f}",
             file=sys.stderr
         )
-        print(
-            f"Clustering     overall:{clustering_avg['overall']:.8f}  "
-            f"cycle:{clustering_avg['cycle']:.8f}  "
-            f"mid:{clustering_avg['middleman']:.8f}  "
-            f"in:{clustering_avg['in']:.8f}  "
-            f"out:{clustering_avg['out']:.8f}",
-            file=sys.stderr
-        )
-        print("Sigma (C \\ L):", file=sys.stderr)
-        print(f"  {'':12}" + "".join(f"{lk:>14}" for lk in L_KEYS), file=sys.stderr)
-        for ck in C_KEYS:
-            row = f"  {ck:12}" + "".join(
-                f"{sw.get(f'sigma_{ck}_{lk}', float('nan')):>14.8f}"
-                for lk in L_KEYS
-            )
+
+        # Clustering averages — all three scopes
+        print("Clustering averages:", file=sys.stderr)
+        header = f"  {'scope':10}" + "".join(f"{k:>14}" for k in C_KEYS)
+        print(header, file=sys.stderr)
+        for scope, avg in [
+            ('full',   clustering_avg_full),
+            ('lscc',   clustering_avg_lscc),
+            ('allscc', clustering_avg_allscc),
+        ]:
+            row = f"  {scope:10}" + "".join(f"{avg[k]:>14.8f}" for k in C_KEYS)
             print(row, file=sys.stderr)
+
+        # Sigma tables — one per C-scope
+        for scope in C_SCOPES:
+            print(f"\nSigma (C={scope} \\ L):", file=sys.stderr)
+            print(f"  {'':12}" + "".join(f"{lk:>14}" for lk in L_KEYS), file=sys.stderr)
+            for ck in C_KEYS:
+                row = f"  {ck:12}" + "".join(
+                    f"{sw.get(f'sigma_{ck}_{scope}_{lk}', float('nan')):>14.8f}"
+                    for lk in L_KEYS
+                )
+                print(row, file=sys.stderr)
         print("=" * 70 + "\n", file=sys.stderr)
 
         return results
@@ -494,7 +577,7 @@ class FagioloClusteringAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Analyze directed graphs with Fagiolo clustering (v2)',
+        description='Analyze directed graphs with Fagiolo clustering (v3)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -503,8 +586,12 @@ Examples:
   %(prog)s input.dot output.csv --per-node per_node.csv --random-iterations 20
 
 Output:
-  Summary CSV  -- one row, all metrics including 15 sigma values
-  Per-node CSV -- one row per class (optional)
+  Summary CSV  -- one row with all metrics:
+                  • basic graph stats
+                  • path lengths (lscc / allscc / undirected)
+                  • Fagiolo clustering in 3 scopes × 5 variants = 15 values
+                  • 45 sigma values (5 C-variants × 3 C-scopes × 3 L-variants)
+  Per-node CSV -- one row per node, full-graph clustering (optional)
         """
     )
     parser.add_argument('input',  type=str, help='Input .dot file')
