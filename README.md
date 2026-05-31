@@ -1,172 +1,92 @@
-# Directed Graph Analysis Tool: Fagiolo Clustering and Small-Worldness Metrics
-
-## Overview
-
-A Python tool for computing Fagiolo clustering coefficients and applying them to small-world network calculations. Computes multiple clustering variants across different graph scopes and calculates small-worldness metrics for directed graphs.
+# Small-World Property Analysis: Directed Graph Metrics & Architectural Smells
 
 ---
 
-## Table of Contents
+## How to Use the Code
 
-1. [System Requirements](#system-requirements)
-2. [Installation](#installation)
-3. [Usage](#usage)
-4. [Methodology](#methodology)
-5. [Input Format](#input-format)
-6. [Output Format](#output-format)
-
----
-
-## System Requirements
-
-- **Python**: 3.8 or higher
-- **Operating System**: Windows, macOS, or Linux
-- **Memory**: Minimum 4 GB RAM
-- **Dependencies**: See `requirements.txt`
-
----
-
-## Installation
+### Step 1: Install Dependencies
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd small-world-property
-
-# Create and activate virtual environment
-python -m venv venv
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # macOS/Linux
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Verify installation
-python pipeline.py --help
 ```
 
----
+**Required packages**: `pandas`, `numpy`, `matplotlib`, `seaborn`, `scipy`, `networkx`, `openpyxl`
 
-## Methodology
+### Step 2: Run the Analysis Notebook
 
-The analysis pipeline processes a directed graph through the following phases:
-
-1. **Graph Loading**: Parse DOT file and build NetworkX DiGraph
-2. **Basic Metrics**: Compute nodes, edges, density, and degree statistics
-3. **Connected Components**: Identify and characterize strongly connected components (SCCs)
-4. **Path Length**: Calculate average shortest path lengths
-5. **Clustering Coefficients**: Compute Fagiolo clustering coefficients for three scopes (full graph, LSCC, AllSCC) and five variants (overall, cycle, middleman, in-pattern, out-pattern)
-6. **Random Baseline**: Generate random graphs preserving degree sequence
-7. **Small-Worldness**: Calculate sigma values comparing original to random baseline metrics
-
-### Key Metrics
-
-- **Clustering Coefficients**: Five directed clustering variants computed across three graph scopes (15 total values)
-- **Path Lengths**: Average shortest path within LSCC, AllSCC, and undirected variants
-- **Small-Worldness (Sigma)**: Ratio of clustering and path-length compared to random baseline. Values > 1 indicate small-world properties.
-
----
-
-## Usage
+Open and execute `analyse.ipynb` in Jupyter:
 
 ```bash
-python pipeline.py <input.dot> <output.csv> [options]
+jupyter notebook analyse.ipynb
 ```
 
-### Options
-
-- `-p, --per-node <file>`: Export per-node metrics
-- `-r, --random-iterations <N>`: Number of random graphs for baseline (default: 10)
-
-### Examples
+Or use JupyterLab:
 
 ```bash
-# Basic analysis
-python pipeline.py graph.dot results.csv
-
-# With per-node metrics
-python pipeline.py graph.dot summary.csv --per-node nodes.csv
-
-# With 50 random baseline graphs
-python pipeline.py graph.dot results.csv --random-iterations 50
+jupyter lab analyse.ipynb
 ```
 
 ---
 
-## Input Format
+## File Structure and Content
 
-The tool accepts directed graphs in GraphViz DOT format (.dot files).
+### Core Python Files
 
-### Basic Example
+| File | Purpose |
+|------|---------|
+| `analyse.ipynb` | **Main analysis notebook** – Loads DV8 & FAG data, computes correlations, generates plots and statistics |
+| `pipeline.py` | Standalone CLI tool for computing graph metrics on DOT files; generates FAG-style CSV output |
+| `test_fagiolo_static.py` | Unit tests for Fagiolo clustering coefficient calculations |
 
-```dot
-digraph GraphName {
-    node1 -> node2;
-    node2 -> node3;
-    node3 -> node1;
-}
-```
+### Input Directories
 
-### With Node Names (Optional)
-
-Add comments to label nodes for per-node output:
-
-```dot
-digraph G {
-    // 0:NodeA
-    // 1:NodeB
-    // 2:NodeC
-    
-    0 -> 1;
-    1 -> 2;
-    2 -> 0;
-}
-```
-
-Format: `// <node_id>:<node_name>`
-
-### Supported Features
-
-- Directed edges: `A -> B`
-- Weighted edges: `A -> B [weight=2.5]` (weights preserved but not used in clustering)
-- Self-loops: `A -> A` (automatically excluded from random graphs)
-- Node attributes: Optional labels and other GraphViz attributes
+| Directory | Content |
+|-----------|---------|
+| `dv8-reports/` | DV8 analysis results for each project (anti-pattern costs in Excel format) |
+| `results/` | FAG (Fagiolo Aggregation) CSV outputs for each project (graph metrics per project) |
+| `depends-out-dot/` | Dependency graph files in GraphViz DOT format |
 
 ---
 
-## Output Format
+## CSV & PNG Files
 
-### Summary CSV File
-
-The tool generates a single-row CSV containing all computed metrics:
-
-**Basic Statistics**: nodes, edges, density, degree statistics
-
-**Path Lengths**: average shortest paths for LSCC, AllSCC, and undirected variants
-
-**SCC Coverage**: number and distribution of strongly connected components
-
-**Clustering Coefficients** (15 values): Five variants (overall, cycle, middleman, in-pattern, out-pattern) across three scopes (full, LSCC, AllSCC)
-
-**Random Baseline Metrics**: Mean and standard deviation of clustering and path lengths from random graphs
-
-**Small-Worldness (Sigma)**: 45 sigma values (5 clustering variants × 3 scopes × 3 path-length variants)
-
-**Small-World Classification**: Boolean flags for each sigma value (True if σ > 1)
-
-### Per-Node CSV (Optional)
-
-When using `--per-node`, outputs one row per node with:
-
-- Node ID and name
-- In-degree, out-degree, total degree
-- Bilateral degree (reciprocal edges)
-- Five clustering coefficients (overall, cycle, middleman, in-pattern, out-pattern)
-
-Data sorted by total degree in descending order.
+| File | Content |
+|------|---------|
+| **`dv8_antipattern_summary.csv`** | Anti-pattern densities by project (Clique, PackageCycle, UnhealthyInheritance, Total_AntiPattern_Density) |
+| **`fag_pipeline_summary.csv`** | Complete graph metrics for all projects (nodes, edges, clustering coefficients, path lengths, connected components) |
+| **`merged_dv8_fag_summary.csv`** | Combined anti-patterns + graph metrics for all 10 projects (master dataset used for correlation analysis) |
+| **`sigma_table_by_project.csv`** | Small-worldness sigma values organized by project (45 sigma columns: 5 types × 9 scopes) |
+| **`sigma_long_form.csv`** | Long-form sigma table with three columns: `project_name`, `sigma_metric`, `sigma_value`, `smallworld_status` (True/False for sigma > 1) |
+| **`smallworld_tendency_by_scope.csv`** | Fraction of projects exhibiting small-world properties by scope (Full→LSCC, Full→AllSCC, etc.) |
+| **`smallworld_tendency_by_sigma_type.csv`** | Fraction showing small-world by sigma type (Overall, Cycle, Middleman, In, Out) |
+| **`smallworld_tendency_by_sigma_metric.csv`** | Fraction showing small-world for each specific metric combination |
+| **`coverage_lscc_allscc_summary.csv`** | Node and edge coverage percentages for LSCC and AllSCC relative to full graph |
+| **`normality_results.csv`** | Shapiro-Wilk test results (variable, statistic, p-value, is_normal flag) for all metrics |
+| **`pearson_results.csv`** | Pearson correlation coefficients and p-values between architectural metrics and quality metrics |
+| **`spearman_results.csv`** | Spearman rank correlation coefficients and p-values (non-parametric alternative) |
+| **`compare_path_methods.png`** | Scatter plots comparing three path-length methods (LSCC, AllSCC, Undirected) |
+| **`lscc_vs_allscc_graph.png`** | Bar charts showing LSCC vs. AllSCC node/edge coverage |
+| **`correlation_plots/positive/*.png`** | Individual scatter plots for each positive correlation (one per metric) |
+| **`correlation_plots/negative/*.png`** | Individual scatter plots for each negative correlation (one per metric) |
 
 ---
 
-## License
 
-This work is provided under the MIT License. See LICENSE file for details.
+### Projects Analyzed
+
+The analysis includes 10 open-source Java projects:
+
+| Project | Type |
+|---------|------|
+| **activemq** | Message broker |
+| **archiva** | Repository manager |
+| **depends** | Dependency analyzer |
+| **druid** | OLAP data store |
+| **geode** | Distributed cache |
+| **jackrabbit** | Content repository |
+| **jena** | RDF/OWL framework |
+| **karaf** | Application container |
+| **phoenix** | SQL query engine |
+| **solr** | Search platform |
+
+---
