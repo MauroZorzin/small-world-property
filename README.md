@@ -82,7 +82,7 @@ The analysis includes 10 open-source Java projects:
 | **archiva** | Repository manager |
 | **depends** | Dependency analyzer |
 | **druid** | OLAP data store |
-| **geode** | Distributed cache |
+| **geode** | Distributed cache | geode\geode-core\src\test folder has been removed do to limit in number of file analised
 | **jackrabbit** | Content repository |
 | **jena** | RDF/OWL framework |
 | **karaf** | Application container |

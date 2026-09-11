@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 C_KEYS  = ['overall', 'cycle', 'middleman', 'in', 'out']
-L_KEYS  = ['lscc', 'allscc', 'undirected']
+L_KEYS  = ['lscc', 'allscc', 'all_reachable']
 # Three scopes for the C numerator in sigma
 C_SCOPES = ['full', 'lscc', 'allscc']
 
@@ -134,24 +134,7 @@ def _allscc_weighted_clustering(G: nx.DiGraph) -> Dict[str, float]:
 def _repair_configuration_model_edges(
     edge_list: List[Tuple], rng: random.Random, max_total_attempts: Optional[int] = None
 ) -> Tuple[List[Tuple], List[int]]:
-    """
-    Removes self-loops and parallel edges from a directed-configuration-model
-    multigraph edge list via degree-preserving double-edge swaps, instead of
-    simply deleting the offending edges (which silently shrinks the in/out
-    degree of the nodes involved and breaks the null-model comparison used
-    for the small-world sigma).
 
-    For a self-loop or duplicate edge (u, v), a partner edge (x, y) is drawn
-    at random from the current edge list and, if the swap doesn't itself
-    create a new self-loop or duplicate, both edges are rewired to
-    (u, y) and (x, v). This leaves the out-degree of u and x, and the
-    in-degree of v and y, exactly unchanged.
-
-    Returns (repaired_edges, still_bad_indices). still_bad_indices is
-    normally empty; it is only non-empty if max_total_attempts is exhausted
-    (pathological degree sequences on very small graphs), in which case the
-    caller should drop those edges as a last resort.
-    """
     edges = list(edge_list)
     m = len(edges)
     if m == 0:
@@ -281,24 +264,35 @@ class FagioloClusteringAnalyzer:
             pass
         return float('inf')
 
-    def path_length_undirected(self) -> float:
-        try:
-            G_und = self.G.to_undirected()
-            if nx.is_connected(G_und):
-                return nx.average_shortest_path_length(G_und)
-            wccs = list(nx.connected_components(G_und))
-            largest_wcc = max(wccs, key=len)
-            if len(largest_wcc) > 1:
-                return nx.average_shortest_path_length(G_und.subgraph(largest_wcc))
-        except Exception:
-            pass
-        return float('inf')
+    def path_length_all_reachable(self) -> float:
+        # try:
+        #     G_und = self.G.to_undirected()
+        #     if nx.is_connected(G_und):
+        #         return nx.average_shortest_path_length(G_und)
+        #     wccs = list(nx.connected_components(G_und))
+        #     largest_wcc = max(wccs, key=len)
+        #     if len(largest_wcc) > 1:
+        #         return nx.average_shortest_path_length(G_und.subgraph(largest_wcc))
+        # except Exception:
+        #     pass
+        # return float('inf')
+        total = 0
+        count = 0
+        for node in self.G.nodes():
+            lengths = nx.single_source_shortest_path_length(self.G, node)
+            for target, dist in lengths.items():
+                if target != node:
+                    total += dist
+                    count += 1
+        if count == 0:
+            return float('inf')
+        return total / count
 
     def all_path_lengths(self) -> Dict[str, float]:
         return {
-            'lscc':       self.path_length_lscc(),
-            'allscc':     self.path_length_allscc(),
-            'undirected': self.path_length_undirected(),
+            'lscc':          self.path_length_lscc(),
+            'allscc':        self.path_length_allscc(),
+            'all_reachable': self.path_length_all_reachable(),
         }
 
     # ── SCC coverage statistics ───────────────────────────────────────────────
@@ -364,10 +358,6 @@ class FagioloClusteringAnalyzer:
         in_seq  = [d for _, d in self.G.in_degree()]
         out_seq = [d for _, d in self.G.out_degree()]
         try:
-            # Keep the raw multigraph (self-loops/parallel edges allowed) so the
-            # exact in/out degree sequence is preserved, then repair it into a
-            # simple graph via degree-preserving double-edge swaps instead of
-            # just deleting the offending edges.
             G_multi = nx.directed_configuration_model(in_seq, out_seq)
             rng = random.Random()
             edges, still_bad = _repair_configuration_model_edges(
@@ -394,7 +384,7 @@ class FagioloClusteringAnalyzer:
         Compute sigma for every combination of:
             C-scope in {full, lscc, allscc}            (3 scopes)
             C-variant in {overall, cycle, middleman, in, out}  (5 variants)
-            L-variant in {lscc, allscc, undirected}    (3 path-length variants)
+            L-variant in {lscc, allscc, all_reachable} (3 path-length variants)
 
         → 3 × 5 × 3 = 45 sigma values.
 
@@ -537,7 +527,7 @@ class FagioloClusteringAnalyzer:
         results.update({f'basic_{k}': v for k, v in basic.items()})
 
         # Three path lengths
-        print("Computing path lengths (lscc / allscc / undirected)...", file=sys.stderr)
+        print("Computing path lengths (lscc / allscc / all_reachable)...", file=sys.stderr)
         path_lengths = self.all_path_lengths()
         for k, v in path_lengths.items():
             results[f'path_length_{k}'] = v
@@ -587,7 +577,7 @@ class FagioloClusteringAnalyzer:
         print(
             f"Path lengths   LSCC: {path_lengths['lscc']:.8f} | "
             f"AllSCC: {path_lengths['allscc']:.8f} | "
-            f"Undirected: {path_lengths['undirected']:.8f}",
+            f"All-reachable: {path_lengths['all_reachable']:.8f}",
             file=sys.stderr
         )
 
@@ -630,7 +620,7 @@ Examples:
 Output:
   Summary CSV  -- one row with all metrics:
                   • basic graph stats
-                  • path lengths (lscc / allscc / undirected)
+                  • path lengths (lscc / allscc / all_reachable)
                   • Fagiolo clustering in 3 scopes × 5 variants = 15 values
                   • 45 sigma values (5 C-variants × 3 C-scopes × 3 L-variants)
         """
