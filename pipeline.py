@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 Directed Graph Analysis CLI Tool with Fagiolo Clustering
-Usage: python pipeline.py input.dot output.csv [--per-node output_nodes.csv] [--random-iterations N]
+Usage: python pipeline.py input.dot output.csv [--random-iterations N]
 """
-import re
+import random
 import networkx as nx
 import numpy as np
 import pandas as pd
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import warnings
@@ -124,6 +125,82 @@ def _allscc_weighted_clustering(G: nx.DiGraph) -> Dict[str, float]:
     if total_weight == 0:
         return {k: float('nan') for k in C_KEYS}
     return {k: weighted[k] / total_weight for k in C_KEYS}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Degree-preserving repair of configuration-model self-loops / multi-edges
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _repair_configuration_model_edges(
+    edge_list: List[Tuple], rng: random.Random, max_total_attempts: Optional[int] = None
+) -> Tuple[List[Tuple], List[int]]:
+    """
+    Removes self-loops and parallel edges from a directed-configuration-model
+    multigraph edge list via degree-preserving double-edge swaps, instead of
+    simply deleting the offending edges (which silently shrinks the in/out
+    degree of the nodes involved and breaks the null-model comparison used
+    for the small-world sigma).
+
+    For a self-loop or duplicate edge (u, v), a partner edge (x, y) is drawn
+    at random from the current edge list and, if the swap doesn't itself
+    create a new self-loop or duplicate, both edges are rewired to
+    (u, y) and (x, v). This leaves the out-degree of u and x, and the
+    in-degree of v and y, exactly unchanged.
+
+    Returns (repaired_edges, still_bad_indices). still_bad_indices is
+    normally empty; it is only non-empty if max_total_attempts is exhausted
+    (pathological degree sequences on very small graphs), in which case the
+    caller should drop those edges as a last resort.
+    """
+    edges = list(edge_list)
+    m = len(edges)
+    if m == 0:
+        return edges, []
+
+    count = Counter(edges)
+
+    def is_bad(i: int) -> bool:
+        u, v = edges[i]
+        return u == v or count[(u, v)] > 1
+
+    bad = [i for i in range(m) if is_bad(i)]
+    if max_total_attempts is None:
+        max_total_attempts = 50 * max(1, len(bad)) + 1000
+
+    attempts = 0
+    while bad and attempts < max_total_attempts:
+        attempts += 1
+        i = bad[-1]
+        if not is_bad(i):
+            bad.pop()
+            continue
+
+        u, v = edges[i]
+        j = rng.randrange(m)
+        if j == i:
+            continue
+        x, y = edges[j]
+        if u == x or v == y:
+            continue  # swap would be a no-op or leave the pair untouched
+
+        new1, new2 = (u, y), (x, v)
+        if new1[0] == new1[1] or new2[0] == new2[1]:
+            continue  # would create a new self-loop
+        if count[new1] > 0 or count[new2] > 0:
+            continue  # would create a new duplicate edge
+
+        count[(u, v)] -= 1
+        count[(x, y)] -= 1
+        count[new1] += 1
+        count[new2] += 1
+        edges[i], edges[j] = new1, new2
+
+        bad.pop()
+        if is_bad(j):
+            bad.append(j)
+
+    still_bad = [i for i in range(m) if is_bad(i)]
+    return edges, still_bad
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,56 +358,30 @@ class FagioloClusteringAnalyzer:
         allscc_avg   = self.fagiolo_clustering_allscc()
         return {'full': full_avg, 'lscc': lscc_avg, 'allscc': allscc_avg}
 
-    # ── Per-node CSV export ───────────────────────────────────────────────────
-
-    def _parse_node_names_from_comments(self, dot_path: str) -> Dict:
-        id_to_name = {}
-        comment_pattern = re.compile(r"^\s*//\s*(\d+):(.+)$")
-        try:
-            with open(dot_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    m = comment_pattern.match(line)
-                    if m:
-                        id_to_name[m.group(1)] = m.group(2).strip()
-        except Exception as e:
-            print(f"Warning: Could not parse comments for node names: {e}", file=sys.stderr)
-        return id_to_name
-
-    def export_per_node_metrics(self, clustering_results: Dict,
-                                output_path: str, dot_path: str):
-        id_to_name = self._parse_node_names_from_comments(dot_path)
-        data = []
-        for idx, node in enumerate(self.original_nodes):
-            nid = str(node)
-            data.append({
-                'node_id':              nid,
-                'node_name':            id_to_name.get(nid, 'Unknown'),
-                'in_degree':            int(clustering_results['in_degree'][idx]),
-                'out_degree':           int(clustering_results['out_degree'][idx]),
-                'total_degree':         int(clustering_results['total_degree'][idx]),
-                'bilateral_degree':     int(clustering_results['bilateral_degree'][idx]),
-                'clustering_overall':   clustering_results['overall'][idx],
-                'clustering_cycle':     clustering_results['cycle'][idx],
-                'clustering_middleman': clustering_results['middleman'][idx],
-                'clustering_in':        clustering_results['in'][idx],
-                'clustering_out':       clustering_results['out'][idx],
-            })
-        df = pd.DataFrame(data).sort_values('total_degree', ascending=False)
-        df.to_csv(output_path, index=False)
-        print(f"  Saved {len(df)} node records", file=sys.stderr)
-        return df
-
     # ── Random graph generation ───────────────────────────────────────────────
 
     def generate_random_directed_graph(self) -> nx.DiGraph:
         in_seq  = [d for _, d in self.G.in_degree()]
         out_seq = [d for _, d in self.G.out_degree()]
         try:
-            G_rand = nx.directed_configuration_model(
-                in_seq, out_seq, create_using=nx.DiGraph()
+            # Keep the raw multigraph (self-loops/parallel edges allowed) so the
+            # exact in/out degree sequence is preserved, then repair it into a
+            # simple graph via degree-preserving double-edge swaps instead of
+            # just deleting the offending edges.
+            G_multi = nx.directed_configuration_model(in_seq, out_seq)
+            rng = random.Random()
+            edges, still_bad = _repair_configuration_model_edges(
+                list(G_multi.edges()), rng
             )
-            G_rand = nx.DiGraph(G_rand)
-            G_rand.remove_edges_from(nx.selfloop_edges(G_rand))
+            if still_bad:
+                print(f"  Warning: {len(still_bad)} self-loop/multi-edge(s) could not "
+                      f"be repaired without violating the degree sequence; dropping "
+                      f"them (residual drift).", file=sys.stderr)
+                drop = set(still_bad)
+                edges = [e for i, e in enumerate(edges) if i not in drop]
+            G_rand = nx.DiGraph()
+            G_rand.add_nodes_from(G_multi.nodes())
+            G_rand.add_edges_from(edges)
         except Exception:
             p = self.m / (self.n * (self.n - 1)) if self.n > 1 else 0
             G_rand = nx.erdos_renyi_graph(self.n, p, directed=True)
@@ -472,9 +523,7 @@ class FagioloClusteringAnalyzer:
 
     # ── Main analysis entry point ─────────────────────────────────────────────
 
-    def analyze_and_export(self, output_path: str, dot_path: str,
-                           per_node_path: Optional[str] = None,
-                           num_random: int = 10) -> Dict:
+    def analyze_and_export(self, output_path: str, num_random: int = 10) -> Dict:
         """Run complete analysis and export results to CSV."""
         print("\n" + "=" * 70, file=sys.stderr)
         print("DIRECTED GRAPH ANALYSIS", file=sys.stderr)
@@ -505,7 +554,7 @@ class FagioloClusteringAnalyzer:
         results['out_degree_median'] = float(np.median(out_degrees))
 
         # ── Fagiolo clustering — all three scopes ─────────────────────────────
-        clustering_results_full, clustering_avg_full = self.fagiolo_clustering_fast()
+        _, clustering_avg_full = self.fagiolo_clustering_fast()
         clustering_avg_lscc   = self.fagiolo_clustering_lscc()
         clustering_avg_allscc = self.fagiolo_clustering_allscc()
 
@@ -515,10 +564,6 @@ class FagioloClusteringAnalyzer:
             results[f'clustering_lscc_{k}']   = clustering_avg_lscc[k]
             results[f'clustering_allscc_{k}'] = clustering_avg_allscc[k]
 
-        # Per-node CSV (full graph only, unchanged)
-        if per_node_path:
-            self.export_per_node_metrics(clustering_results_full, per_node_path, dot_path)
-
         # ── Small-worldness (45 sigma values) ─────────────────────────────────
         sw = self.compute_small_worldness(num_random)
         results.update({f'smallworld_{k}': v for k, v in sw.items()})
@@ -526,8 +571,6 @@ class FagioloClusteringAnalyzer:
         # Save summary CSV
         pd.DataFrame([results]).to_csv(output_path, index=False)
         print(f"\n  Summary saved to: {output_path}", file=sys.stderr)
-        if per_node_path:
-            print(f"  Per-node saved to: {per_node_path}", file=sys.stderr)
 
         # ── Human-readable summary ─────────────────────────────────────────────
         print("\n" + "=" * 70, file=sys.stderr)
@@ -582,8 +625,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s dependency_graph.dot results.csv
-  %(prog)s graph.dot summary.csv --per-node nodes.csv
-  %(prog)s input.dot output.csv --per-node per_node.csv --random-iterations 20
+  %(prog)s input.dot output.csv --random-iterations 20
 
 Output:
   Summary CSV  -- one row with all metrics:
@@ -591,13 +633,10 @@ Output:
                   • path lengths (lscc / allscc / undirected)
                   • Fagiolo clustering in 3 scopes × 5 variants = 15 values
                   • 45 sigma values (5 C-variants × 3 C-scopes × 3 L-variants)
-  Per-node CSV -- one row per node, full-graph clustering (optional)
         """
     )
     parser.add_argument('input',  type=str, help='Input .dot file')
     parser.add_argument('output', type=str, help='Output summary CSV')
-    parser.add_argument('-p', '--per-node', type=str, default=None,
-                        help='Output per-node CSV (optional)')
     parser.add_argument('-r', '--random-iterations', type=int, default=10,
                         help='Random graphs for sigma baseline (default: 10)')
     args = parser.parse_args()
@@ -610,17 +649,9 @@ Output:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    per_node_path = None
-    if args.per_node:
-        per_node_path = Path(args.per_node)
-        per_node_path.parent.mkdir(parents=True, exist_ok=True)
-        per_node_path = str(per_node_path)
-
     try:
         analyzer = FagioloClusteringAnalyzer(str(input_path))
-        analyzer.analyze_and_export(
-            str(output_path), str(input_path), per_node_path, args.random_iterations
-        )
+        analyzer.analyze_and_export(str(output_path), args.random_iterations)
     except Exception as e:
         print(f"\nError: {e}", file=sys.stderr)
         import traceback

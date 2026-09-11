@@ -1,7 +1,7 @@
 # Define the paths to the tool and the output directory
 $toolPath = ".\depends-0.9.7-package-20221104a\depends-0.9.7\depends.bat"
 $repoRoot = ".\repos"
-$outputRoot = ".\depends-out-json"
+$outputRoot = ".\depends_9_10_2026_out"
 
 # Create the output root directory if it doesn't exist
 if (!(Test-Path -Path $outputRoot)) {
@@ -18,7 +18,7 @@ Get-ChildItem -Path $repoRoot -Directory | ForEach-Object {
 
     # Execute the command with the specified arguments
     # --type-filter is passed as a single string to ensure correct parsing
-    & $toolPath java $inputPath $outputPath -g=file -p=windows -s --type-filter=Import,Extend,Implement,Call,Create
+    & $toolPath java $inputPath $outputPath -g=file "-p=windows" -s "-f=json,dot" "--type-filter=Import,Call,Return,Throw,Implement,Extend,Create,Use,Cast,Annotation"
 }
 
 Write-Host "Batch processing complete." -ForegroundColor Green
