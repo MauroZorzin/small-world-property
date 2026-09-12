@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 Generates N random directed graphs preserving the degree sequence of a real
-graph (read from degree_sequence.json — never re-parses the .dot file),
-computes their Fagiolo/path-length metrics, and appends one row per graph to
-its OWN output CSV: one file per invocation, so many instances can run in
-parallel with no shared-file write contention. Each graph is discarded
-immediately after its metrics are computed and the row is flushed to disk.
+graph read from degree_sequence.json (never re-parses the .dot file)
+Computes their Fagiolo and path-length metrics and appends one row per graph
+to its OWN output CSV
+One file per invocation so many instances can run in parallel with no
+shared-file write contention
+Each graph is discarded immediately after its metrics are computed
+and the row is flushed to disk
 
-Usage:
+Usage
     python generate_random_sample.py results/<project>/degree_sequence.json \\
         --out-dir results/<project>/ --count 50 [--seed 42]
 """
@@ -49,7 +51,7 @@ def main():
 
     deg_path = Path(args.degree_sequence_json)
     if not deg_path.exists():
-        print(f"Error: '{deg_path}' not found — run compute_real_metrics.py first", file=sys.stderr)
+        print(f"Error '{deg_path}' not found run compute_real_metrics.py first", file=sys.stderr)
         sys.exit(1)
 
     with open(deg_path, encoding='utf-8') as f:

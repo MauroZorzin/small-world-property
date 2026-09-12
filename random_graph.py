@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Shared, pure random-graph generation: degree-preserving directed configuration
-model with double-edge-swap repair of self-loops / parallel edges.
+Shared pure random graph generation
+Degree-preserving directed configuration model with double-edge-swap repair
+of self-loops and parallel edges
 
-No file I/O in this module.
+No file I/O in this module
 """
 import random
 import networkx as nx
@@ -15,14 +16,15 @@ def repair_configuration_model_edges(
     edge_list: List[Tuple], rng: random.Random, max_total_attempts: Optional[int] = None
 ) -> Tuple[List[Tuple], List[int]]:
     """
-    Removes self-loops and parallel edges from a directed-configuration-model
-    multigraph edge list via degree-preserving double-edge swaps, instead of
-    simply deleting the offending edges (which would silently shrink the
-    in/out degree of the nodes involved).
+    Removes self-loops and parallel edges from a directed configuration model
+    multigraph edge list via degree-preserving double-edge swaps
+    instead of simply deleting the offending edges
+    which would silently shrink the in/out degree of the nodes involved
 
-    Returns (repaired_edges, still_bad_indices). still_bad_indices is normally
-    empty; non-empty only if max_total_attempts is exhausted (pathological
-    degree sequences on very small graphs).
+    Returns repaired_edges and still_bad_indices
+    still_bad_indices is normally empty
+    non-empty only if max_total_attempts is exhausted on pathological
+    degree sequences on very small graphs
     """
     edges = list(edge_list)
     m = len(edges)
@@ -79,12 +81,12 @@ def generate_random_directed_graph(
     in_seq: List[int], out_seq: List[int], rng: Optional[random.Random] = None
 ) -> Tuple[nx.DiGraph, int, int, int]:
     """
-    Generates a directed graph with the exact given in/out-degree sequence,
-    via configuration model + degree-preserving repair of self-loops/multi-edges.
+    Generates a directed graph with the exact given in/out-degree sequence
+    via configuration model plus degree-preserving repair of self-loops and multi-edges
 
-    Returns (G_rand, n_selfloops_repaired, n_multiedges_repaired, n_dropped).
+    Returns G_rand n_selfloops_repaired n_multiedges_repaired and n_dropped
     n_dropped counts edges that could not be repaired (should normally be 0)
-    and were removed as a last resort, causing a (tiny) degree-sequence drift.
+    and were removed as a last resort causing a tiny degree-sequence drift
     """
     if rng is None:
         rng = random.Random()

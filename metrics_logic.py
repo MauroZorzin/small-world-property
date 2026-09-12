@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Shared, pure graph-metric computations: Fagiolo (2007) directed clustering,
-path lengths, SCC coverage, basic degree stats.
+Shared pure graph metric computations
+Fagiolo (2007) directed clustering path lengths SCC coverage and basic degree stats
 
-No file I/O in this module. Used identically by compute_real_metrics.py (on
-the real graph) and generate_random_sample.py (on each random graph), so the
-two never duplicate the underlying math.
+No file I/O in this module
+Used identically by compute_real_metrics.py on the real graph
+and generate_random_sample.py on each random graph
+so the two never duplicate the underlying math
 """
 import networkx as nx
 import numpy as np
@@ -18,8 +19,8 @@ C_SCOPES = ['full', 'lscc', 'allscc']
 
 def fagiolo_on_graph(G: nx.DiGraph) -> Tuple[Dict, Dict]:
     """
-    Vectorised Fagiolo (2007) directed clustering for a given DiGraph.
-    Returns (per_node_dict, averages_dict).
+    Vectorised Fagiolo (2007) directed clustering for a given DiGraph
+    Returns per_node_dict and averages_dict
     """
     n = G.number_of_nodes()
     if n == 0:
@@ -42,13 +43,14 @@ def fagiolo_on_graph(G: nx.DiGraph) -> Tuple[Dict, Dict]:
     AAT = A @ AT
     A2T = A2.T.tocsr()
 
-    # Only 2 full sparse products (A2, AAT); the 4 triple-product diagonals are
-    # obtained elementwise (diag(M@X)_i = sum_j M[i,j]*X[j,i]) — O(n*d^2) not O(n*d^3).
+    # Only 2 full sparse products needed (A2 and AAT); the 4 triple-product diagonals
+    # come from diag(M@X)_i = sum_j M[i,j]*X[j,i] giving O(n*d^2) not O(n*d^3)
     diag_A3    = np.array(A2.multiply(AT).sum(axis=1)).flatten()
     diag_AAT_A = np.array(AAT.multiply(AT).sum(axis=1)).flatten()
     diag_AT_A2 = np.array(AT.multiply(A2T).sum(axis=1)).flatten()
     diag_A2_AT = np.array(A2.multiply(A).sum(axis=1)).flatten()
-    # (A+AT)^3's diagonal = 2*(sum of the 4 above), Fagiolo eq.13 — A_sym3 never built.
+    # (A+AT)^3 diagonal equals 2 times the sum of the 4 above per Fagiolo eq 13
+    # so A_sym3 is never built
     diag_A_sym3 = 2 * (diag_A3 + diag_AAT_A + diag_AT_A2 + diag_A2_AT)
 
     denom_cycle     = d_in * d_out - d_bilateral
@@ -87,7 +89,7 @@ def fagiolo_on_graph(G: nx.DiGraph) -> Tuple[Dict, Dict]:
 
 
 def allscc_weighted_clustering(G: nx.DiGraph) -> Dict[str, float]:
-    """Pairs-weighted average of Fagiolo clustering across ALL non-trivial SCCs."""
+    """Pairs-weighted average of Fagiolo clustering across ALL non-trivial SCCs"""
     sccs = [s for s in nx.strongly_connected_components(G) if len(s) > 1]
     if not sccs:
         return {k: float('nan') for k in C_KEYS}
@@ -109,7 +111,7 @@ def allscc_weighted_clustering(G: nx.DiGraph) -> Dict[str, float]:
 
 
 def fagiolo_clustering_lscc(G: nx.DiGraph) -> Dict[str, float]:
-    """Fagiolo averages computed on the LSCC subgraph only."""
+    """Fagiolo averages computed on the LSCC subgraph only"""
     sccs = list(nx.strongly_connected_components(G))
     if not sccs:
         return {k: float('nan') for k in C_KEYS}
@@ -121,7 +123,7 @@ def fagiolo_clustering_lscc(G: nx.DiGraph) -> Dict[str, float]:
 
 
 def fagiolo_scoped(G: nx.DiGraph) -> Dict[str, Dict[str, float]]:
-    """Returns clustering averages for all three scopes: {'full','lscc','allscc'}."""
+    """Returns clustering averages for all three scopes {'full','lscc','allscc'}"""
     _, full_avg = fagiolo_on_graph(G)
     return {
         'full':   full_avg,

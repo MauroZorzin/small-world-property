@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Reads real_metrics.csv + all random_samples/*.csv fragments for a project,
-computes the 45 small-world sigma values, and writes final_summary.csv.
-Re-runnable at any time as more random-sample fragments accumulate — nothing
-already computed is ever recomputed.
+Reads real_metrics.csv plus all random_samples/*.csv fragments for a project
+Computes the 45 small-world sigma values and writes final_summary.csv
+Re-runnable at any time as more random-sample fragments accumulate
+nothing already computed is ever recomputed
 
-Usage:
+Usage
     python combine_results.py --project-dir results/<project>/
 """
 import argparse
@@ -28,7 +28,7 @@ def main():
     project_dir = Path(args.project_dir)
     real_metrics_path = project_dir / 'real_metrics.csv'
     if not real_metrics_path.exists():
-        print(f"Error: {real_metrics_path} not found — run compute_real_metrics.py first",
+        print(f"Error {real_metrics_path} not found run compute_real_metrics.py first",
               file=sys.stderr)
         sys.exit(1)
 
@@ -36,8 +36,8 @@ def main():
 
     fragment_paths = sorted(glob.glob(str(project_dir / 'random_samples' / '*.csv')))
     if not fragment_paths:
-        print(f"Error: no random-sample files found under {project_dir / 'random_samples'} "
-              f"— run generate_random_sample.py first", file=sys.stderr)
+        print(f"Error no random-sample files found under {project_dir / 'random_samples'} "
+              f"run generate_random_sample.py first", file=sys.stderr)
         sys.exit(1)
 
     samples = pd.concat([pd.read_csv(p) for p in fragment_paths], ignore_index=True)

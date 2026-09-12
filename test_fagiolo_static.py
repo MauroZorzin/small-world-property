@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Static correctness tests for fagiolo_clustering_fast() in pipeline.py.
+Static correctness tests for fagiolo_on_graph() in metrics_logic.py.
 
 Every expected value in this file is derived by hand from the Fagiolo (2007)
-formulas and can be verified with pencil and paper. 
+formulas and can be verified with pencil and paper.
 
 Fagiolo (2007) formulas used
 ─────────────────────────────
@@ -23,32 +23,10 @@ Each denominator = 0 -> coefficient = 0 (by convention).
 """
 
 import sys
-import numpy as np
 import networkx as nx
-from scipy import sparse
-from pipeline import FagioloClusteringAnalyzer
+import metrics_logic as ml
 
 ATOL = 1e-5
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Injector helper (no .dot file needed)
-# ──────────────────────────────────────────────────────────────────────────────
-
-def make_analyzer(G: nx.DiGraph) -> FagioloClusteringAnalyzer:
-    obj = FagioloClusteringAnalyzer.__new__(FagioloClusteringAnalyzer)
-    obj.G = G
-    obj.n = G.number_of_nodes()
-    obj.m = G.number_of_edges()
-    obj.original_nodes = list(G.nodes())
-    obj.node_to_idx = {n: i for i, n in enumerate(obj.original_nodes)}
-    obj.idx_to_node = {i: n for n, i in obj.node_to_idx.items()}
-    if obj.n > 0:
-        obj.A = nx.to_scipy_sparse_array(G, nodelist=obj.original_nodes,
-                                         format='csr', dtype=np.float32)
-    else:
-        obj.A = sparse.csr_array((0, 0), dtype=np.float32)
-    return obj
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -133,8 +111,7 @@ def section(title):
 
 section("TEST 1   Pure directed 3-cycle  0->1->2->0")
 G = nx.DiGraph([(0,1),(1,2),(2,0)])
-az = make_analyzer(G)
-r, avg = az.fagiolo_clustering_fast()
+r, avg = ml.fagiolo_on_graph(G)
 
 # All nodes are symmetric   check all three
 for i, name in enumerate(["node 0","node 1","node 2"]):
@@ -161,8 +138,7 @@ check("avg c_overall",   avg['overall'],   0.5)
 
 section("TEST 2   Directed path  0->1->2->3  (no triangles)")
 G = nx.DiGraph([(0,1),(1,2),(2,3)])
-az = make_analyzer(G)
-r, avg = az.fagiolo_clustering_fast()
+r, avg = ml.fagiolo_on_graph(G)
 
 for metric in ['cycle','middleman','in','out','overall']:
     for i, name in enumerate(["node 0","node 1","node 2","node 3"]):
@@ -226,8 +202,7 @@ for metric in ['cycle','middleman','in','out','overall']:
 
 section("TEST 3   Fully bidirectional triangle  0↔1↔2↔0")
 G = nx.DiGraph([(0,1),(1,0),(1,2),(2,1),(0,2),(2,0)])
-az = make_analyzer(G)
-r, avg = az.fagiolo_clustering_fast()
+r, avg = ml.fagiolo_on_graph(G)
 
 for i, name in enumerate(["node 0","node 1","node 2"]):
     check(f"c_cycle     {name}", r['cycle'][i],     1.0)
@@ -254,8 +229,7 @@ for i, name in enumerate(["node 0","node 1","node 2"]):
 
 section("TEST 4   Pure out-star  0->{1,2,3}  (no triangles)")
 G = nx.DiGraph([(0,1),(0,2),(0,3)])
-az = make_analyzer(G)
-r, avg = az.fagiolo_clustering_fast()
+r, avg = ml.fagiolo_on_graph(G)
 
 for metric in ['cycle','middleman','in','out','overall']:
     for i in range(4):
@@ -276,8 +250,7 @@ for metric in ['cycle','middleman','in','out','overall']:
 
 section("TEST 5   Single bidirectional edge  0↔1  (all denoms = 0)")
 G = nx.DiGraph([(0,1),(1,0)])
-az = make_analyzer(G)
-r, avg = az.fagiolo_clustering_fast()
+r, avg = ml.fagiolo_on_graph(G)
 
 for metric in ['cycle','middleman','in','out','overall']:
     for i in range(2):
@@ -411,8 +384,7 @@ for metric in ['cycle','middleman','in','out','overall']:
 
 section("TEST 6   Mixed graph: cycle 0->1->2->0 plus fans 0->3, 1->3")
 G = nx.DiGraph([(0,1),(1,2),(2,0),(0,3),(1,3)])
-az = make_analyzer(G)
-r, avg = az.fagiolo_clustering_fast()
+r, avg = ml.fagiolo_on_graph(G)
 
 check("c_cycle     node 0", r['cycle'][0],      0.5)
 check("c_cycle     node 1", r['cycle'][1],      0.5)
