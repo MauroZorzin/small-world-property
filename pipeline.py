@@ -41,7 +41,7 @@ def _fagiolo_on_graph(G: nx.DiGraph) -> Tuple[Dict, Dict]:
 
     nodes = list(G.nodes())
     A  = nx.to_scipy_sparse_array(G, nodelist=nodes, format='csr', dtype=np.float32)
-    AT = A.T
+    AT = A.T.tocsr()
 
     d_in  = np.array(A.sum(axis=0)).flatten()
     d_out = np.array(A.sum(axis=1)).flatten()
@@ -50,19 +50,18 @@ def _fagiolo_on_graph(G: nx.DiGraph) -> Tuple[Dict, Dict]:
     bilateral_matrix = A.multiply(AT)
     d_bilateral = np.array(bilateral_matrix.sum(axis=1)).flatten()
 
-    A2     = A  @ A
-    A3     = A2 @ A
-    AAT_A  = A  @ AT @ A
-    AT_A2  = AT @ A2
-    A2_AT  = A2 @ AT
-    A_sym  = A  + AT
-    A_sym3 = A_sym @ A_sym @ A_sym
+    A2  = A @ A          # CHANGE: only 2 full products now (A2, AAT) instead of 6
+    AAT = A @ AT
+    A2T = A2.T.tocsr()
 
-    diag_A3     = np.array(A3.diagonal()).flatten()
-    diag_AAT_A  = np.array(AAT_A.diagonal()).flatten()
-    diag_AT_A2  = np.array(AT_A2.diagonal()).flatten()
-    diag_A2_AT  = np.array(A2_AT.diagonal()).flatten()
-    diag_A_sym3 = np.array(A_sym3.diagonal()).flatten()
+    # CHANGE: diag(M@X)_i = sum_j M[i,j]*X[j,i], computed elementwise instead of
+    # forming A3/AAT_A/AT_A2 in full — O(n*d^2) instead of O(n*d^3), verified bit-identical
+    diag_A3    = np.array(A2.multiply(AT).sum(axis=1)).flatten()
+    diag_AAT_A = np.array(AAT.multiply(AT).sum(axis=1)).flatten()
+    diag_AT_A2 = np.array(AT.multiply(A2T).sum(axis=1)).flatten()
+    diag_A2_AT = np.array(A2.multiply(A).sum(axis=1)).flatten()
+    # CHANGE: A_sym3 dropped entirely — diag((A+AT)^3) = 2*(sum of the 4 diagonals above), Fagiolo eq.13
+    diag_A_sym3 = 2 * (diag_A3 + diag_AAT_A + diag_AT_A2 + diag_A2_AT)
 
     denom_cycle     = d_in * d_out - d_bilateral
     denom_middleman = d_in * d_out - d_bilateral
