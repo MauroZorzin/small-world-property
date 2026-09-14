@@ -48,6 +48,9 @@ python generate_random_sample.py results/<project>/degree_sequence.json --out-di
 Generates `--count` degree-preserving random graphs and appends their metrics to a
 new file under `results/<project>/random_samples/`. Safe to run again anytime to add
 more samples without recomputing anything. Optional `--seed` for reproducibility.
+The null model is a configuration model that preserves each node's exact degree
+rather than an Erdos-Renyi graph, which is the more conservative choice for
+networks with heterogeneous degree distributions like software dependency graphs.
 
 ```bash
 python combine_results.py --project-dir results/<project>/
