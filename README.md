@@ -44,10 +44,21 @@ Loads the `.dot` file once and writes `real_metrics.csv` (exact graph metrics) a
 
 ```bash
 python generate_random_sample.py results/<project>/degree_sequence.json --out-dir results/<project>/ --count 500
+python generate_random_sample.py results/<project>/degree_sequence.json --out-dir results/<project>/ --converge-threshold 2.0
 ```
-Generates `--count` degree-preserving random graphs and appends their metrics to a
-new file under `results/<project>/random_samples/`. Safe to run again anytime to add
-more samples without recomputing anything. Optional `--seed` for reproducibility.
+Generates degree-preserving random graphs and writes their metrics to a new file under
+`results/<project>/random_samples/`. Safe to run again anytime to add more samples
+without recomputing anything. Optional `--seed` for reproducibility.
+
+Two mutually exclusive modes
+
+| Parameter | Meaning |
+|---|---|
+| `--count N` | Generates exactly N graphs. If no mode is given the default is 1 |
+| `--converge-threshold PCT` | Generates in batches until every clustering and path length metric has a relative standard error of the mean (SEM) under PCT percent. The check uses all accumulated samples, those of this run and those of every file already present in `random_samples/` |
+| `--batch-size N` | Only with `--converge-threshold`. Samples per batch before rechecking convergence. Default 50 |
+| `--max-samples N` | Only with `--converge-threshold`. Safety cap on the total accumulated samples. Default 5000 |
+
 The null model is a configuration model that preserves each node's exact degree
 rather than an Erdos-Renyi graph, which is the more conservative choice for
 networks with heterogeneous degree distributions like software dependency graphs.
@@ -80,19 +91,10 @@ Reads `final_summary.csv` (per project, from step 3) and `anti-pattern-cost.xlsx
 | `compute_real_metrics.py` | CLI. Loads a `.dot` file once, writes `real_metrics.csv` and `degree_sequence.json` |
 | `generate_random_sample.py` | CLI. Generates N random graphs, appends their metrics to a new file per invocation |
 | `combine_results.py` | CLI. Combines `real_metrics.csv` and all random samples into `final_summary.csv` |
-| `pipeline.py` | Legacy monolithic CLI, superseded by the three scripts above. Kept for reference |
 | `test_fagiolo_static.py` | Unit tests for `metrics_logic.fagiolo_on_graph` against hand-derived expected values |
 
-### Input Directories
 
-| Directory | Content |
-|---|---|
-| `repos/` | Source checkouts of the 10 analyzed projects |
-| `depends_9_10_2026_out/` | `.dot` and `.json` dependency graphs produced by Depends (step 1) |
-| `dv8-out/` | DV8 project files and anti-pattern analysis results (step 2) |
-| `results/<project>/` | Per-project pipeline output: `real_metrics.csv`, `degree_sequence.json`, `random_samples/*.csv`, `final_summary.csv` |
-
-### Output Files (`analysis-results/`)
+### Output Files
 
 | File | Content |
 |---|---|
@@ -108,10 +110,12 @@ Reads `final_summary.csv` (per project, from step 3) and `anti-pattern-cost.xlsx
 | `smallworld_tendency_by_scope.csv` / `_by_sigma_type.csv` / `_by_sigma_metric.csv` | Fraction of projects with sigma above 1, grouped different ways |
 | `smallworld_tendency.png` | Bar charts of the two tendency tables above |
 | `normality_results.csv` | Shapiro-Wilk normality test results per variable |
-| `correlation_results.csv` | Pearson and Spearman r and p for every architecture x quality pair, with Benjamini-Hochberg FDR correction |
-| `best_estimators_summary.csv` | Best-correlating estimator per quality metric, for the sigma-only and all-estimator candidate pools |
-| `best_estimators_candidates.csv` | Every candidate considered behind the summary above, ranked |
-| `correlation_plots/*.png` | Scatter plot for each FDR-significant architecture/quality pair |
+| `correlation_results.csv` | Pearson and Spearman r and p for every architecture x quality pair (196 tests), with Benjamini-Hochberg (`_bh`) and Benjamini-Yekutieli (`_by`) FDR correction. `sigma_full_correlation_results.csv` (180 tests) and `sigma_matched_correlation_results.csv` (60 tests) have the same columns for their own families. BY is valid under any dependence between tests, BH assumes independence or positive dependence |
+| `best_estimators_summary_all.csv` / `_sigma_all.csv` / `_sigma.csv` | Best-correlating estimator per quality metric for the all-variables, sigma (45) and sigma scope-matched (15) candidate pools, with BH and BY p-values (`*` = BH significant, `**` = also BY significant) |
+| `best_estimators_candidates_all.csv` / `_sigma_all.csv` / `_sigma.csv` | Every candidate considered behind each summary above, ranked |
+| `best_estimators_comparison.csv` | The three best-estimator summaries stacked in one table |
+| `*_full_test_overview_bh.png` / `*_full_test_overview_by.png` | Sign and significance of every test and spread of r per quality metric, one figure per FDR method, for the three test families |
+| `correlation_plots/bh/*.png`, `correlation_plots/by/*.png` | Scatter plot for each architecture/quality pair significant after BH, and for those that also survive BY |
 | `coverage_lscc_allscc_summary.csv` / `coverage_lscc_allscc.png` | Node and edge coverage of LSCC and AllSCC relative to the full graph |
 
 ---
@@ -120,19 +124,21 @@ Reads `final_summary.csv` (per project, from step 3) and `anti-pattern-cost.xlsx
 
 10 open-source Java projects:
 
-| Project | Type | Commit |
-|---|---|---|
-| activemq | Message broker | [`ef789aad26`](https://github.com/apache/activemq/commit/ef789aad26) |
-| archiva | Repository manager | [`2beaf86490`](https://github.com/apache/archiva/commit/2beaf86490) |
-| depends | Dependency analyzer | [`bf4c41d03a`](https://github.com/multilang-depends/depends/commit/bf4c41d03a) |
-| druid | JDBC connection pool / SQL monitor | [`78fa7415c4`](https://github.com/alibaba/druid/commit/78fa7415c4) |
-| geode¹ | Distributed cache | [`b0b2dab9de`](https://github.com/apache/geode/commit/b0b2dab9de) |
-| jackrabbit | Content repository | [`bb1f7e3595`](https://github.com/apache/jackrabbit/commit/bb1f7e3595) |
-| jena | RDF/OWL framework | [`9479c0490a`](https://github.com/apache/jena/commit/9479c0490a) |
-| karaf | Application container | [`41fb3f7228`](https://github.com/apache/karaf/commit/41fb3f7228) |
-| phoenix | SQL query engine | [`93203b0812`](https://github.com/apache/phoenix/commit/93203b0812) |
-| solr | Search platform | [`e92700f0f8`](https://github.com/apache/solr/commit/e92700f0f8) |
+| Project | Type | Repository | Branch | Commit |
+|---|---|---|---|---|
+| activemq | Message broker | [apache/activemq](https://github.com/apache/activemq) | `main` | [`ef789aad26`](https://github.com/apache/activemq/commit/ef789aad26) |
+| archiva | Repository manager | [apache/archiva](https://github.com/apache/archiva) | `master` | [`2beaf86490`](https://github.com/apache/archiva/commit/2beaf86490) |
+| depends | Dependency analyzer | [multilang-depends/depends](https://github.com/multilang-depends/depends) | `master` | [`bf4c41d03a`](https://github.com/multilang-depends/depends/commit/bf4c41d03a) |
+| druid | JDBC connection pool / SQL monitor | [alibaba/druid](https://github.com/alibaba/druid) | `master` | [`78fa7415c4`](https://github.com/alibaba/druid/commit/78fa7415c4) |
+| geode¹ ² | Distributed cache | [apache/geode](https://github.com/apache/geode) | `develop` | [`b0b2dab9de`](https://github.com/apache/geode/commit/b0b2dab9de) |
+| jackrabbit | Content repository | [apache/jackrabbit](https://github.com/apache/jackrabbit) | `trunk` | [`bb1f7e3595`](https://github.com/apache/jackrabbit/commit/bb1f7e3595) |
+| jena² | RDF/OWL framework | [apache/jena](https://github.com/apache/jena) | `main` | [`9479c0490a`](https://github.com/apache/jena/commit/9479c0490a) |
+| karaf | Application container | [apache/karaf](https://github.com/apache/karaf) | `main` | [`41fb3f7228`](https://github.com/apache/karaf/commit/41fb3f7228) |
+| phoenix | SQL query engine | [apache/phoenix](https://github.com/apache/phoenix) | `master` | [`93203b0812`](https://github.com/apache/phoenix/commit/93203b0812) |
+| solr | Search platform | [apache/solr](https://github.com/apache/solr) | `main` | [`e92700f0f8`](https://github.com/apache/solr/commit/e92700f0f8) |
 
 ¹ `geode-core/src/test` was removed to reduce the file count analyzed.
+² DV8 throws an exception when analyzing jena and geode; this does not affect the data used in this study.
+
 
 

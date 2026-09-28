@@ -61,7 +61,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading graph from {dot_path}", file=sys.stderr)
-    G = nx.DiGraph(nx.drawing.nx_pydot.read_dot(str(dot_path)))
+    with open(dot_path, encoding='utf-8') as dot_file:
+        G = nx.DiGraph(nx.drawing.nx_pydot.read_dot(dot_file))
     n, m = G.number_of_nodes(), G.number_of_edges()
     print(f"  Loaded {n} nodes and {m} edges", file=sys.stderr)
 

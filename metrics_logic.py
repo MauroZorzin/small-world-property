@@ -211,6 +211,20 @@ def scc_coverage_stats(G: nx.DiGraph) -> Dict:
     }
 
 
+def relative_sem_pct(mean, std, n) -> float:
+    """
+    Relative standard error of the mean as a percentage 100 * (std/sqrt(n)) / |mean|
+    NaN if mean, std or n is missing, non-finite, n < 2, or mean == 0
+    Shared by generate_random_sample.py (to decide when to stop sampling) and
+    the notebook's convergence check, so both use the exact same formula
+    """
+    if mean is None or std is None or n is None:
+        return float('nan')
+    if not (np.isfinite(mean) and np.isfinite(std) and np.isfinite(n)) or n < 2 or mean == 0:
+        return float('nan')
+    return 100 * (std / np.sqrt(n)) / abs(mean)
+
+
 def basic_metrics(G: nx.DiGraph) -> Dict:
     n = G.number_of_nodes()
     m = G.number_of_edges()
